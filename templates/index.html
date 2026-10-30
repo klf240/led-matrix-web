@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LED Matrix Controller</title>
+<style>
+  :root { --bg:#0f172a; --card:#1e293b; --accent:#38bdf8; --text:#e2e8f0; }
+  * { box-sizing:border-box; }
+  body { font-family:system-ui,sans-serif; background:var(--bg); color:var(--text); margin:0; padding:1rem; }
+  h1,h2 { margin-top:0; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:1.2rem; max-width:1200px; margin:0 auto; }
+  @media (max-width:800px){ .grid{grid-template-columns:1fr;} }
+  .card { background:var(--card); border-radius:12px; padding:1.2rem; }
+  label { display:block; margin-top:.6rem; font-size:.9rem; opacity:.9; }
+  input,select,textarea { width:100%; padding:.45rem; margin-top:.25rem; border-radius:6px; border:1px solid #334155; background:#0f172a; color:var(--text); }
+  button { padding:.55rem 1.1rem; border:none; border-radius:6px; cursor:pointer; font-weight:600; margin:.3rem .3rem 0 0; }
+  .btn-primary { background:var(--accent); color:#0f172a; }
+  .btn-danger  { background:#ef4444; color:white; }
+  .btn-secondary { background:#475569; color:white; }
+  .flash { padding:.7rem 1rem; border-radius:6px; margin-bottom:1rem; }
+  .flash.success { background:#14532d; }
+  .flash.error   { background:#7f1d1d; }
+  .preview { width:100%; max-width:320px; border-radius:8px; background:#000; }
+  .file-list { max-height:220px; overflow:auto; }
+  .file-list label { display:flex; align-items:center; gap:.5rem; }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:.8rem; }
+</style>
+</head>
+<body>
+<div class="grid">
+
+  <!-- Left column -->
+  <div>
+    <h1>LED Matrix Controller</h1>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for cat, msg in messages %}
+        <div class="flash {{ cat }}">{{ msg }}</div>
+      {% endfor %}
+    {% endwith %}
+
+    <!-- Live preview -->
+    <div class="card">
+      <h2>Live Preview</h2>
+      <img id="preview" class="preview" src="/preview.jpg" alt="preview">
+      <p style="font-size:.8rem;opacity:.7">Refreshes every 2 s (placeholder)</p>
+    </div>
+
+    <!-- Upload -->
+    <div class="card">
+      <h2>Upload</h2>
+      <form action="/upload" method="post" enctype="multipart/form-data">
+        <input type="file" name="file" accept=".png,.jpg,.jpeg,.gif,.bmp,.webp,.ppm" required>
+        <button class="btn-primary" type="submit">Upload</button>
+      </form>
+    </div>
+
+    <!-- Solid colour -->
+    <div class="card">
+      <h2>Solid Colour</h2>
+      <form action="/solid" method="post">
+        <label>Colour</label>
+        <input type="color" name="colour" value="#00ff00">
+        <!-- include all matrix options as hidden or shared form – for brevity we reuse a common set -->
+        <input type="hidden" name="led_rows" value="64">
+        <input type="hidden" name="led_cols" value="64">
+        <input type="hidden" name="led_brightness" id="solid_brightness" value="80">
+        <label>Brightness <span id="bri_val">80</span>%</label>
+        <input type="range" min="1" max="100" value="80" oninput="document.getElementById('solid_brightness').value=this.value;document.getElementById('bri_val').textContent=this.value">
+        <button class="btn-primary" type="submit">Fill</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Right column -->
+  <div>
+    <!-- Matrix options (shared) -->
+    <div class="card">
+      <h2>Matrix Settings</h2>
+      <form id="matrixForm">
+        <div class="row">
+          <div><label>Rows</label><input type="number" name="led_rows" value="64" form="playForm"></div>
+          <div><label>Cols</label><input type="number" name="led_cols" value="64" form="playForm"></div>
+        </div>
+        <div class="row">
+          <div><label>Chain</label><input type="number" name="led_chain" value="1" form="playForm"></div>
+          <div><label>Parallel</label><input type="number" name="led_parallel" value="1" form="playForm"></div>
+        </div>
+        <label>Brightness %</label>
+        <input type="number" name="led_brightness" value="80" form="playForm">
+        <label>GPIO mapping</label>
+        <select name="led_gpio_mapping" form="playForm">
+          <option value="adafruit-hat" selected>adafruit-hat</option>
+          <option value="regular">regular</option>
+          <option value="adafruit-hat-pwm">adafruit-hat-pwm</option>
+        </select>
+        <label>Pixel mapper</label>
+        <input type="text" name="led_pixel_mapper" value="V-mapper" form="playForm">
+        <label>Slowdown</label>
+        <input type="number" name="led_slowdown_gpio" value="2" form="playForm">
+      </form>
+    </div>
+
+    <!-- Images / Playlist -->
+    <div class="card">
+      <h2>Images & Playlist</h2>
+      <form id="playForm" action="/play_images" method="post">
+        <div class="file-list">
+          {% for f in files %}
+            <label><input type="checkbox" name="images" value="{{ f }}"> {{ f }}</label>
+          {% else %}
+            <p>No images yet</p>
+          {% endfor %}
+        </div>
+        <label><input type="checkbox" name="center" value="1" checked> Center</label>
+        <label>Wait between images (s)</label>
+        <input type="number" name="wait" value="4" step="0.5">
+        <label>Loop count (0=forever)</label>
+        <input type="number" name="loop" value="0">
+        <button class="btn-primary" type="submit">▶ Play selected</button>
+      </form>
+
+      <form action="/stop" method="post" style="display:inline">
+        <button class="btn-danger" type="submit">■ Stop</button>
+      </form>
+
+      <hr>
+      <form action="/save_playlist" method="post">
+        <label>Save playlist as</label>
+        <input type="text" name="playlist_name" placeholder="my-show">
+        <!-- the same checkboxes are not re-sent; user can re-select or we can improve later -->
+        <button class="btn-secondary" type="submit">Save Playlist</button>
+      </form>
+    </div>
+
+    <!-- Scrolling text -->
+    <div class="card">
+      <h2>Scrolling Text</h2>
+      <form action="/play_text" method="post">
+        <label>Text</label>
+        <input type="text" name="text" value="Hello from the Pi!" required>
+        <!-- matrix flags will be taken from the form above if we give them the same form= attribute,
+             for simplicity we hard-code the most important ones here -->
+        <input type="hidden" name="led_rows" value="64">
+        <input type="hidden" name="led_cols" value="64">
+        <input type="hidden" name="led_brightness" value="80">
+        <input type="hidden" name="led_gpio_mapping" value="adafruit-hat">
+        <input type="hidden" name="led_pixel_mapper" value="V-mapper">
+        <button class="btn-primary" type="submit">Scroll Text</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+  // live preview refresh
+  setInterval(() => {
+    const img = document.getElementById('preview');
+    img.src = '/preview.jpg?' + Date.now();
+  }, 2000);
+</script>
+</body>
+</html>

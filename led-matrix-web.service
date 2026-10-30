@@ -1,0 +1,19 @@
+[Unit]
+Description=LED Matrix Web Controller
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/pi/led-matrix-web
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/pi/led-matrix-web/venv/bin/python app.py
+Restart=always
+RestartSec=5
+
+# Give the process access to the matrix hardware
+DeviceAllow=/dev/gpiomem rw
+DeviceAllow=/dev/mem rw
+
+[Install]
+WantedBy=multi-user.target
