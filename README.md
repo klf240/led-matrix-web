@@ -6,7 +6,7 @@ Features:
 - Upload and play images
 - Multi-image playlists
 - Scrolling text
-- Solid colour fill
+- Solid color fill
 - All major `--led-*` options
 - systemd service
 
