@@ -55,7 +55,7 @@ else
         warn "${MATRIX_REPO} exists but has no built binaries – re-cloning"
         sudo rm -rf "${MATRIX_REPO}"
     fi
-    git clone --depth 1 https://github.com/raspberrypi/rgb-led-matrix.git "${MATRIX_REPO}"
+    git clone --depth 1 https://github.com/hzeller/rpi-rgb-led-matrix.git "${MATRIX_REPO}"
 
     info "Building rpi-rgb-led-matrix (this can take a few minutes)..."
     cd "${MATRIX_REPO}"
