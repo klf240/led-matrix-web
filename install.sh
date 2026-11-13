@@ -57,17 +57,17 @@ else
     fi
     git clone --depth 1 https://github.com/hzeller/rpi-rgb-led-matrix.git "${MATRIX_REPO}"
 
-    info "Building rpi-rgb-led-matrix (this can take a few minutes)..."
-    cd "${MATRIX_REPO}"
-    ./autogen.sh
-    ./configure --prefix=/usr/local
-    make -j"$(nproc)"
-    sudo make install
+    # Extra deps for the image viewer
+    info "Installing matrix build dependencies..."
+    sudo apt-get install -y -qq \
+        libgraphicsmagick++-dev libwebp-dev 2>/dev/null
 
-    # Build the utility binaries (led-image-viewer, text-example)
-    info "Building utils (led-image-viewer, text-example)..."
+    info "Building led-image-viewer (this can take a few minutes)..."
     cd "${MATRIX_REPO}/utils"
-    make -j"$(nproc)"
+    make led-image-viewer -j"$(nproc)"
+
+    info "Building text-scroller..."
+    make text-scroller -j"$(nproc)"
     cd "${USER_HOME}"
 
     # Verify

@@ -109,12 +109,12 @@ _discovered = _discover_matrix_utils()
 if _discovered:
     MATRIX_UTILS       = _discovered
     LED_IMAGE_VIEWER   = MATRIX_UTILS / "led-image-viewer"
-    LED_TEXT           = MATRIX_UTILS / "text-example"
+    LED_TEXT           = MATRIX_UTILS / "text-scroller"
 else:
     # fall back to the old default so error messages still make sense
     MATRIX_UTILS       = Path.home() / "rpi-rgb-led-matrix" / "utils"
     LED_IMAGE_VIEWER   = MATRIX_UTILS / "led-image-viewer"
-    LED_TEXT           = MATRIX_UTILS / "text-example"
+    LED_TEXT           = MATRIX_UTILS / "text-scroller"
 
 # ---------------------------------------------------------------------------
 # Persistent settings (saved to settings.json)
@@ -187,7 +187,7 @@ def kill_current():
     current_process = None
     # safety net – skip sudo if we are already root
     prefix = [] if os.geteuid() == 0 else ["sudo", "-n"]
-    for pattern in ("led-image-viewer", "text-example"):
+    for pattern in ("led-image-viewer", "text-scroller"):
         subprocess.run(prefix + ["pkill", "-f", pattern],
                        check=False, capture_output=True)
 
@@ -344,7 +344,7 @@ def play_images():
 
 @app.route("/play_text", methods=["POST"])
 def play_text():
-    """Scrolling text using text-example."""
+    """Scrolling text using text-scroller."""
     global current_process
     data = request.form
     text = data.get("text", "Hello").strip()
@@ -353,7 +353,7 @@ def play_text():
         return redirect(url_for("index"))
 
     if not LED_TEXT.exists():
-        msg = (f"text-example not found at {LED_TEXT}. "
+        msg = (f"text-scroller not found at {LED_TEXT}. "
                f"Rebuild rpi-rgb-led-matrix with utils enabled.")
         log.error(msg)
         flash(msg, "error")
@@ -378,12 +378,12 @@ def play_text():
         if current_process.poll() is not None:
             err = (current_process.stderr.read().decode(errors="replace")
                    if current_process.stderr else "")
-            flash(f"text-example died on start: {err.strip()[:300]}", "error")
+            flash(f"text-scroller died on start: {err.strip()[:300]}", "error")
             current_process = None
         else:
             flash(f"Scrolling: {text}", "success")
     except Exception as e:
-        log.exception("Failed to start text-example")
+        log.exception("Failed to start text-scroller")
         flash(f"Failed: {e}", "error")
     return redirect(url_for("index"))
 
