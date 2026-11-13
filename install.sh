@@ -1,37 +1,176 @@
 #!/bin/bash
-set -e
-echo "=== LED Matrix Web Controller Installer ==="
+# =============================================================================
+# LED Matrix Web Controller – One-shot installer for a fresh Raspberry Pi
+#
+# Usage:
+#   curl -sL https://raw.githubusercontent.com/klf240/led-matrix-web/master/install.sh | bash
+#
+# Or download and run:
+#   wget https://raw.githubusercontent.com/klf240/led-matrix-web/master/install.sh
+#   bash install.sh
+# =============================================================================
+set -euo pipefail
 
-if [ ! -f app.py ]; then
-  echo "Cloning repository..."
-  git clone https://github.com/klf240/led-matrix-web.git
-  cd led-matrix-web
+# --- colours for output -----------------------------------------------------
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
+info()  { echo -e "${GREEN}[INFO]${NC}  $*"; }
+ok()    { echo -e "${GREEN}[ OK ]${NC}  $*"; }
+warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
+die()   { echo -e "${RED}[FAIL]${NC}  $*" >&2; exit 1; }
+
+# --- detect user / paths ----------------------------------------------------
+USER_NAME="$(whoami)"
+USER_HOME="$(eval echo "~${USER_NAME}")"
+APP_DIR="${USER_HOME}/led-matrix-web"
+MATRIX_REPO="${USER_HOME}/rgb-led-matrix"
+MATRIX_UTILS="${MATRIX_REPO}/utils"
+
+echo ""
+echo "============================================================"
+echo "  LED Matrix Web Controller – Installer"
+echo "  User:   ${USER_NAME}"
+echo "  Home:   ${USER_HOME}"
+echo "============================================================"
+echo ""
+
+# =============================================================================
+# Step 1 – System packages
+# =============================================================================
+info "Installing system packages (git, build tools, Python)..."
+sudo apt-get update -qq
+sudo apt-get install -y -qq \
+    git python3 python3-venv python3-pip \
+    build-essential autoconf libtool pkg-config \
+    libudev-dev 2>/dev/null
+ok "System packages installed"
+
+# =============================================================================
+# Step 2 – Build rpi-rgb-led-matrix (hardware driver)
+# =============================================================================
+if [ -x "${MATRIX_UTILS}/led-image-viewer" ]; then
+    ok "rpi-rgb-led-matrix already built at ${MATRIX_REPO}"
+else
+    info "Cloning rpi-rgb-led-matrix..."
+    if [ -d "${MATRIX_REPO}" ]; then
+        warn "${MATRIX_REPO} exists but has no built binaries – re-cloning"
+        sudo rm -rf "${MATRIX_REPO}"
+    fi
+    git clone --depth 1 https://github.com/raspberrypi/rgb-led-matrix.git "${MATRIX_REPO}"
+
+    info "Building rpi-rgb-led-matrix (this can take a few minutes)..."
+    cd "${MATRIX_REPO}"
+    ./autogen.sh
+    ./configure --prefix=/usr/local
+    make -j"$(nproc)"
+    sudo make install
+
+    # Build the utility binaries (led-image-viewer, text-example)
+    info "Building utils (led-image-viewer, text-example)..."
+    cd "${MATRIX_REPO}/utils"
+    make -j"$(nproc)"
+    cd "${USER_HOME}"
+
+    # Verify
+    [ -x "${MATRIX_UTILS}/led-image-viewer" ] \
+        || die "led-image-viewer build failed – check output above"
+    ok "rpi-rgb-led-matrix built: ${MATRIX_UTILS}"
 fi
 
-echo "Creating virtual environment..."
-python3 -m venv venv
-source venv/bin/activate
+# =============================================================================
+# Step 3 – Clone / update led-matrix-web
+# =============================================================================
+if [ -d "${APP_DIR}/.git" ]; then
+    info "Updating existing led-matrix-web repo..."
+    cd "${APP_DIR}"
+    git pull origin master
+else
+    info "Cloning led-matrix-web..."
+    git clone https://github.com/klf240/led-matrix-web.git "${APP_DIR}"
+    cd "${APP_DIR}"
+fi
+ok "led-matrix-web ready at ${APP_DIR}"
 
-echo "Installing Python packages..."
-pip install --upgrade pip
-pip install -r requirements.txt
+# =============================================================================
+# Step 4 – Python virtual environment
+# =============================================================================
+info "Creating Python virtual environment..."
+python3 -m venv "${APP_DIR}/venv"
+"${APP_DIR}/venv/bin/pip" install --upgrade pip -q
+"${APP_DIR}/venv/bin/pip" install -r "${APP_DIR}/requirements.txt" -q
+ok "Python dependencies installed"
 
-mkdir -p uploads playlists
+# Create runtime directories
+mkdir -p "${APP_DIR}/uploads" "${APP_DIR}/playlists"
+
+# =============================================================================
+# Step 5 – systemd service
+# =============================================================================
+info "Installing systemd service..."
+
+# Generate the service file with correct paths for THIS user
+SERVICE_FILE="/etc/systemd/system/led-matrix-web.service"
+sudo tee "${SERVICE_FILE}" > /dev/null <<EOF
+[Unit]
+Description=LED Matrix Web Controller
+After=network.target
+
+[Service]
+Type=simple
+User=${USER_NAME}
+WorkingDirectory=${APP_DIR}
+Environment=PYTHONUNBUFFERED=1
+Environment=MATRIX_UTILS_DIR=${MATRIX_UTILS}
+ExecStart=${APP_DIR}/venv/bin/python ${APP_DIR}/app.py
+Restart=always
+RestartSec=5
+
+# Give the process access to the matrix hardware
+DeviceAllow=/dev/gpiomem rw
+DeviceAllow=/dev/mem rw
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable led-matrix-web
+ok "Service installed and enabled"
+
+# =============================================================================
+# Step 6 – Start & verify
+# =============================================================================
+info "Starting led-matrix-web..."
+sudo systemctl restart led-matrix-web
+sleep 2
+
+if sudo systemctl is-active --quiet led-matrix-web; then
+    ok "Service is running"
+else
+    warn "Service may have failed – check: journalctl -u led-matrix-web -n 30"
+fi
+
+# Grab the Pi's IP for the user
+PI_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+[ -z "${PI_IP}" ] && PI_IP="<pi-ip>"
 
 echo ""
 echo "============================================================"
-echo " Installation complete!"
+echo " ✅  Installation complete!"
 echo "============================================================"
 echo ""
-echo "To start now:"
-echo "  cd $(pwd)"
-echo "  source venv/bin/activate"
-echo "  sudo venv/bin/python app.py"
+echo "  Open in your browser:"
+echo "    http://${PI_IP}:8080"
 echo ""
-echo "Then open:  http://$(hostname -I | awk '{print $1}'):8080"
+echo "  Useful commands:"
+echo "    sudo systemctl status led-matrix-web     # check status"
+echo "    journalctl -u led-matrix-web -f          # live logs"
+echo "    sudo systemctl restart led-matrix-web    # restart"
+echo "    sudo systemctl disable --now led-matrix-web  # stop & disable"
 echo ""
-echo "To install as a system service:"
-echo "  sudo cp led-matrix-web.service /etc/systemd/system/"
-echo "  sudo systemctl daemon-reload"
-echo "  sudo systemctl enable --now led-matrix-web"
+if [ ! -x "${MATRIX_UTILS}/led-image-viewer" ]; then
+    echo "  ⚠️  Matrix driver NOT found – the web UI will show an error."
+echo "     Build it manually or set MATRIX_UTILS_DIR in the service file."
+    echo ""
+fi
+echo "============================================================"
 echo ""
