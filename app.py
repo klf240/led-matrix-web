@@ -120,6 +120,7 @@ else:
 # Persistent settings (saved to settings.json)
 # ---------------------------------------------------------------------------
 DEFAULT_SETTINGS = {
+    # --- Matrix hardware settings (saved via "Save Settings" button) ---
     "led_rows":            "64",
     "led_cols":            "64",
     "led_chain":           "1",
@@ -137,6 +138,14 @@ DEFAULT_SETTINGS = {
     "led_show_refresh":    False,
     "led_inverse":         False,
     "led_no_hardware_pulse": False,
+    # --- Action defaults (auto-saved on each play/solid/text action) ---
+    "solid_colour":        "#00ff00",
+    "center":              True,
+    "wait":                "4",
+    "loop":                "0",
+    "text":                "Hello from the Pi!",
+    "speed":               "15",
+    "direction":           "right-left",
 }
 
 def load_settings() -> dict:
@@ -155,13 +164,25 @@ def save_settings(data: dict):
     for key in DEFAULT_SETTINGS:
         val = data.get(key)
         if val is not None and val != "":
-            # booleans arrive as the string "on" from checkboxes
+            # booleans arrive as the string "on" or "1" from checkboxes
             if isinstance(DEFAULT_SETTINGS[key], bool):
-                current[key] = (val == "on")
+                current[key] = (val in ("on", "1", True))
             else:
                 current[key] = val
     SETTINGS_FILE.write_text(json.dumps(current, indent=2))
     log.info("Settings saved: %s", {k: v for k, v in current.items() if v})
+
+
+def _persist_action(data: dict):
+    """
+    Auto-save action-specific form fields to settings.json.
+    Called at the start of play_images / play_text / solid so that
+    the user's last-used values survive a reboot.
+    """
+    # Map form field names → settings keys where they differ
+    if "colour" in data:
+        data["solid_colour"] = data["colour"]
+    save_settings(data)
 
 # ---------------------------------------------------------------------------
 # Process management
@@ -283,6 +304,7 @@ def play_images():
     """Play one or more images (playlist)."""
     global current_process
     data = request.form
+    _persist_action(data)
     images = request.form.getlist("images")
     if not images:
         flash("No images selected", "error")
@@ -347,6 +369,7 @@ def play_text():
     """Scrolling text using text-scroller."""
     global current_process
     data = request.form
+    _persist_action(data)
     text = data.get("text", "Hello").strip()
     if not text:
         flash("No text entered", "error")
@@ -407,6 +430,7 @@ def solid():
     """Fill the whole matrix with a solid colour."""
     global current_process
     data = request.form
+    _persist_action(data)
     colour = data.get("colour", "#00ff00").lstrip("#")
     try:
         r = int(colour[0:2], 16)

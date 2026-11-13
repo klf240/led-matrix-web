@@ -61,7 +61,7 @@
       <h2>Solid Colour</h2>
       <form action="/solid" method="post">
         <label>Colour</label>
-        <input type="color" name="colour" value="#00ff00">
+        <input type="color" name="colour" value="{{ settings.solid_colour }}">
         <!-- matrix flags are loaded from saved settings on the backend -->
         <button class="btn-primary" type="submit">Fill</button>
       </form>
@@ -112,11 +112,11 @@
             <p>No images yet</p>
           {% endfor %}
         </div>
-        <label><input type="checkbox" name="center" value="1" checked> Center</label>
+        <label><input type="checkbox" name="center" value="1" {% if settings.center %}checked{% endif %}> Center</label>
         <label>Wait between images (s)</label>
-        <input type="number" name="wait" value="4" step="0.5">
+        <input type="number" name="wait" value="{{ settings.wait }}" step="0.5">
         <label>Loop count (0=forever)</label>
-        <input type="number" name="loop" value="0">
+        <input type="number" name="loop" value="{{ settings.loop }}">
         <button class="btn-primary" type="submit">▶ Play selected</button>
       </form>
 
@@ -138,18 +138,19 @@
       <h2>Scrolling Text</h2>
       <form action="/play_text" method="post">
         <label>Text</label>
-        <input type="text" name="text" value="Hello from the Pi!" required>
+        <input type="text" name="text" value="{{ settings.text }}" required>
         <div class="row">
           <div>
             <label>Speed (chars/sec)</label>
-            <input type="number" name="speed" value="15" min="0" max="100" step="1">
+            <input type="number" name="speed" value="{{ settings.speed }}" min="0" max="100" step="1">
           </div>
           <div>
             <label>Direction</label>
             <select name="direction">
-              <option value="right-left" selected>Right → Left</option>
-              <option value="left-right">Left → Right</option>
-              <option value="static">Static (no scroll)</option>
+              {% for dir in ['right-left', 'left-right', 'static'] %}
+                {% set labels = {'right-left': 'Right → Left', 'left-right': 'Left → Right', 'static': 'Static (no scroll)'} %}
+                <option value="{{ dir }}" {% if settings.direction == dir %}selected{% endif %}>{{ labels[dir] }}</option>
+              {% endfor %}
             </select>
           </div>
         </div>
