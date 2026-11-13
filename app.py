@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 LED Matrix Web Controller
-Supports: image viewer, multi-image playlist, scrolling text, solid colour, live preview
+Supports: image viewer, multi-image playlist, scrolling text, solid color, live preview
 """
 
 import glob
@@ -139,7 +139,7 @@ DEFAULT_SETTINGS = {
     "led_inverse":         False,
     "led_no_hardware_pulse": False,
     # --- Action defaults (auto-saved on each play/solid/text action) ---
-    "solid_colour":        "#00ff00",
+    "solid_color":         "#00ff00",
     "center":              True,
     "wait":                "4",
     "loop":                "0",
@@ -173,16 +173,17 @@ def save_settings(data: dict):
     log.info("Settings saved: %s", {k: v for k, v in current.items() if v})
 
 
-def _persist_action(data: dict):
+def _persist_action(data):
     """
     Auto-save action-specific form fields to settings.json.
     Called at the start of play_images / play_text / solid so that
     the user's last-used values survive a reboot.
     """
-    # Map form field names → settings keys where they differ
-    if "colour" in data:
-        data["solid_colour"] = data["colour"]
-    save_settings(data)
+    # request.form is an ImmutableMultiDict – make a mutable copy
+    d = dict(data)
+    if "color" in d:
+        d["solid_color"] = d["color"]
+    save_settings(d)
 
 # ---------------------------------------------------------------------------
 # Process management
@@ -427,17 +428,17 @@ def play_text():
 
 @app.route("/solid", methods=["POST"])
 def solid():
-    """Fill the whole matrix with a solid colour."""
+    """Fill the whole matrix with a solid color."""
     global current_process
     data = request.form
     _persist_action(data)
-    colour = data.get("colour", "#00ff00").lstrip("#")
+    color = data.get("color", "#00ff00").lstrip("#")
     try:
-        r = int(colour[0:2], 16)
-        g = int(colour[2:4], 16)
-        b = int(colour[4:6], 16)
+        r = int(color[0:2], 16)
+        g = int(color[2:4], 16)
+        b = int(color[4:6], 16)
     except Exception:
-        flash("Invalid colour", "error")
+        flash("Invalid color", "error")
         return redirect(url_for("index"))
 
     if not LED_IMAGE_VIEWER.exists():
@@ -447,7 +448,7 @@ def solid():
         flash(msg, "error")
         return redirect(url_for("index"))
 
-    # Generate a tiny 1x1 PNG of that colour and display it stretched
+    # Generate a tiny 1x1 PNG of that color and display it stretched
     from PIL import Image
     img = Image.new("RGB", (1, 1), (r, g, b))
     tmp = UPLOAD_FOLDER / "_solid.png"
@@ -471,9 +472,9 @@ def solid():
             flash(f"Process died on start: {err.strip()[:300]}", "error")
             current_process = None
         else:
-            flash(f"Solid colour #{colour}", "success")
+            flash(f"Solid color #{color}", "success")
     except Exception as e:
-        log.exception("Failed to start solid colour")
+        log.exception("Failed to start solid color")
         flash(f"Failed: {e}", "error")
     return redirect(url_for("index"))
 
@@ -537,7 +538,7 @@ def load_playlist(name):
 # Live preview – very lightweight
 # We keep a small JPEG that the UI can poll.
 # (A full framebuffer grab would need extra code; this is a placeholder
-#  that shows the last solid colour / a status image.)
+#  that shows the last solid color / a status image.)
 # ------------------------------------------------------------------
 
 @app.route("/preview.jpg")
