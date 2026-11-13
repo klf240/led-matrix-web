@@ -366,6 +366,20 @@ def play_text():
     if font_path.exists():
         cmd += ["-f", str(font_path)]
     cmd += ["-C", "255,255,255"]          # white
+
+    # Speed & direction → -s flag
+    #   positive = right→left, negative = left→right, 0 = static
+    try:
+        speed = int(data.get("speed", "15"))
+    except (ValueError, TypeError):
+        speed = 15
+    direction = data.get("direction", "right-left")
+    if direction == "left-right":
+        speed = -speed
+    elif direction == "static":
+        speed = 0
+    cmd += ["-s", str(speed)]
+
     cmd.append(text)
 
     log.info("Command: %s", " ".join(cmd))

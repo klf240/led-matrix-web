@@ -139,6 +139,20 @@
       <form action="/play_text" method="post">
         <label>Text</label>
         <input type="text" name="text" value="Hello from the Pi!" required>
+        <div class="row">
+          <div>
+            <label>Speed (chars/sec)</label>
+            <input type="number" name="speed" value="15" min="0" max="100" step="1">
+          </div>
+          <div>
+            <label>Direction</label>
+            <select name="direction">
+              <option value="right-left" selected>Right → Left</option>
+              <option value="left-right">Left → Right</option>
+              <option value="static">Static (no scroll)</option>
+            </select>
+          </div>
+        </div>
         <!-- matrix flags are loaded from saved settings on the backend -->
         <button class="btn-primary" type="submit">Scroll Text</button>
       </form>
