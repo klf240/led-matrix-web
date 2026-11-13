@@ -21,7 +21,7 @@
   .flash { padding:.7rem 1rem; border-radius:6px; margin-bottom:1rem; }
   .flash.success { background:#14532d; }
   .flash.error   { background:#7f1d1d; }
-  .preview { width:100%; max-width:320px; border-radius:8px; background:#000; }
+  .preview { width:100%; max-width:512px; border-radius:8px; background:#000; image-rendering:pixelated; }
   .file-list { max-height:220px; overflow:auto; }
   .file-list label { display:flex; align-items:center; gap:.5rem; }
   .row { display:grid; grid-template-columns:1fr 1fr; gap:.8rem; }
@@ -44,7 +44,7 @@
     <div class="card">
       <h2>Live Preview</h2>
       <img id="preview" class="preview" src="/preview.jpg" alt="preview">
-      <p style="font-size:.8rem;opacity:.7">Refreshes every 2 s (placeholder)</p>
+      <p style="font-size:.8rem;opacity:.7">Live preview – updates every 0.5 s</p>
     </div>
 
     <!-- Upload -->
@@ -162,11 +162,11 @@
 </div>
 
 <script>
-  // live preview refresh
+  // live preview refresh (500ms for smooth text animation)
   setInterval(() => {
     const img = document.getElementById('preview');
     img.src = '/preview.jpg?' + Date.now();
-  }, 2000);
+  }, 500);
 
   // status bar – poll /status every 3 s
   async function pollStatus() {

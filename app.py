@@ -192,6 +192,22 @@ current_process = None
 preview_lock = threading.Lock()
 last_preview = None          # holds a small JPEG of the last frame (for live preview)
 
+# ---------------------------------------------------------------------------
+# Display state – tracks what is currently on the matrix for live preview
+# ---------------------------------------------------------------------------
+display_state = {
+    "mode": "idle",       # idle | solid | image | text
+    "color": (0, 0, 0),   # for solid mode
+    "images": [],         # list of file paths for image mode
+    "wait": 4.0,          # seconds between images
+    "loop": 0,            # 0 = forever
+    "center": True,
+    "text": "",
+    "speed": 15,
+    "direction": "right-left",
+    "start_time": None,   # time.time() when display started
+}
+
 
 def allowed_file(filename: str) -> bool:
     return Path(filename).suffix.lower() in ALLOWED_EXTENSIONS
@@ -358,6 +374,14 @@ def play_images():
             flash(f"Process died on start: {err.strip()[:300]}", "error")
             current_process = None
         else:
+            display_state.update({
+                "mode": "image",
+                "images": [str(UPLOAD_FOLDER / i) for i in images],
+                "wait": float(data.get("wait", 4) or 4),
+                "loop": int(data.get("loop", 0) or 0),
+                "center": bool(data.get("center")),
+                "start_time": time.time(),
+            })
             flash(f"Playing {len(images)} image(s)", "success")
     except Exception as e:
         log.exception("Failed to start led-image-viewer")
@@ -419,6 +443,13 @@ def play_text():
             flash(f"text-scroller died on start: {err.strip()[:300]}", "error")
             current_process = None
         else:
+            display_state.update({
+                "mode": "text",
+                "text": text,
+                "speed": abs(speed),
+                "direction": direction,
+                "start_time": time.time(),
+            })
             flash(f"Scrolling: {text}", "success")
     except Exception as e:
         log.exception("Failed to start text-scroller")
@@ -472,6 +503,11 @@ def solid():
             flash(f"Process died on start: {err.strip()[:300]}", "error")
             current_process = None
         else:
+            display_state.update({
+                "mode": "solid",
+                "color": (r, g, b),
+                "start_time": time.time(),
+            })
             flash(f"Solid color #{color}", "success")
     except Exception as e:
         log.exception("Failed to start solid color")
@@ -482,6 +518,7 @@ def solid():
 @app.route("/stop", methods=["POST"])
 def stop():
     kill_current()
+    display_state.update({"mode": "idle", "start_time": None})
     flash("Stopped", "success")
     return redirect(url_for("index"))
 
@@ -543,19 +580,141 @@ def load_playlist(name):
 
 @app.route("/preview.jpg")
 def preview_jpg():
-    # For a real live preview you would grab the current matrix frame.
-    # Here we return a simple status image so the UI has something to show.
-    from PIL import Image, ImageDraw, ImageFont
-    img = Image.new("RGB", (320, 180), (20, 20, 30))
-    d = ImageDraw.Draw(img)
-    status = "RUNNING" if (current_process and current_process.poll() is None) else "IDLE"
-    d.text((20, 70), f"Matrix: {status}", fill=(0, 255, 120))
-    d.text((20, 100), "Live preview placeholder", fill=(180, 180, 180))
+    """
+    Render a live preview of what is currently on the LED matrix.
+    Uses PIL to approximate the display at 4x scale for visibility.
+    """
     import io
+    from PIL import Image, ImageDraw, ImageFont
+
+    # Matrix dimensions from saved settings
+    s = load_settings()
+    rows = int(s.get("led_rows", 64) or 64)
+    cols = int(s.get("led_cols", 64) or 64)
+    chain = int(s.get("led_chain", 1) or 1)
+    total_cols = cols * chain
+
+    # Scale factor for preview (make it visible in browser)
+    SCALE = 4
+    pw, ph = total_cols * SCALE, rows * SCALE
+
+    with preview_lock:
+        mode = display_state["mode"]
+        running = current_process is not None and current_process.poll() is None
+
+        if not running or mode == "idle":
+            # Idle screen
+            img = Image.new("RGB", (pw, ph), (15, 15, 25))
+            d = ImageDraw.Draw(img)
+            d.text((10, ph // 2 - 10), "IDLE – no display active",
+                   fill=(100, 100, 120))
+        elif mode == "solid":
+            r, g, b = display_state["color"]
+            img = Image.new("RGB", (pw, ph), (r, g, b))
+        elif mode == "image":
+            img = _render_image_preview(pw, ph, total_cols, rows)
+        elif mode == "text":
+            img = _render_text_preview(pw, ph, total_cols, rows)
+        else:
+            img = Image.new("RGB", (pw, ph), (15, 15, 25))
+
     buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=70)
+    img.save(buf, format="JPEG", quality=80)
     buf.seek(0)
-    return app.response_class(buf.read(), mimetype="image/jpeg")
+    return app.response_class(buf.read(), mimetype="image/jpeg",
+                              headers={"Cache-Control": "no-store"})
+
+
+def _render_image_preview(pw, ph, total_cols, rows):
+    """Render the current image in the playlist based on elapsed time."""
+    from PIL import Image as PILImage
+
+    images = display_state["images"]
+    wait = display_state["wait"]
+    center = display_state["center"]
+    start = display_state["start_time"] or time.time()
+
+    if not images:
+        return PILImage.new("RGB", (pw, ph), (0, 0, 0))
+
+    # Determine which image is currently showing
+    elapsed = time.time() - start
+    idx = int(elapsed / wait) % len(images)
+    path = images[idx]
+
+    try:
+        src = PILImage.open(path).convert("RGB")
+    except Exception as e:
+        log.warning("Preview: cannot open %s: %s", path, e)
+        return PILImage.new("RGB", (pw, ph), (40, 0, 0))
+
+    # Scale to fit matrix area
+    if center:
+        # Fit within matrix bounds, centered
+        src = src.thumbnail((total_cols * 4, rows * 4), PILImage.LANCZOS)
+        canvas = PILImage.new("RGB", (pw, ph), (0, 0, 0))
+        x = (pw - src.width) // 2
+        y = (ph - src.height) // 2
+        canvas.paste(src, (x, y))
+        return canvas
+    else:
+        # Stretch to fill
+        return src.resize((pw, ph), PILImage.LANCZOS)
+
+
+def _render_text_preview(pw, ph, total_cols, rows):
+    """Render scrolling text with animated position based on elapsed time."""
+    from PIL import Image as PILImage, ImageDraw, ImageFont
+
+    text = display_state["text"] or ""
+    speed = display_state["speed"] or 15
+    direction = display_state["direction"]
+    start = display_state["start_time"] or time.time()
+
+    img = PILImage.new("RGB", (pw, ph), (0, 0, 0))
+    d = ImageDraw.Draw(img)
+
+    if not text:
+        return img
+
+    # Try to load a font that matches the matrix size
+    font = None
+    font_path = MATRIX_UTILS.parent / "fonts" / "9x18.bdf"
+    # BDF fonts can't be loaded by PIL directly – use a bitmap-style approach
+    # Scale: each "matrix pixel" is SCALE px in preview
+    scale = 4
+    try:
+        font = ImageFont.load_default(size=rows * scale // 2)
+    except Exception:
+        font = ImageFont.load_default()
+
+    # Calculate text width and position
+    bbox = d.textbbox((0, 0), text, font=font)
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+    text_y = (ph - text_h) // 2
+
+    # Animate x position based on elapsed time and speed
+    # speed = chars/sec, so pixels/sec ≈ speed * (text_w / len(text))
+    if text:
+        px_per_sec = speed * (text_w / max(len(text), 1))
+    else:
+        px_per_sec = 0
+
+    elapsed = time.time() - start
+    offset = int(elapsed * px_per_sec)
+
+    if direction == "right-left":
+        # Text starts off-screen right, scrolls left
+        x = pw - (offset % (pw + text_w))
+    elif direction == "left-right":
+        # Text starts off-screen left, scrolls right
+        x = -text_w + (offset % (pw + text_w))
+    else:  # static
+        x = (pw - text_w) // 2
+
+    d.text((x, text_y), text, fill=(255, 255, 255), font=font)
+    return img
 
 
 if __name__ == "__main__":
