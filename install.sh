@@ -3,10 +3,10 @@
 # LED Matrix Web Controller – One-shot installer for a fresh Raspberry Pi
 #
 # Usage:
-#   curl -sL https://raw.githubusercontent.com/klf240/led-matrix-web/master/install.sh | bash
+#   curl -sL https://raw.githubusercontent.com/klf240/led-matrix-web/main/install.sh | bash
 #
 # Or download and run:
-#   wget https://raw.githubusercontent.com/klf240/led-matrix-web/master/install.sh
+#   wget https://raw.githubusercontent.com/klf240/led-matrix-web/main/install.sh
 #   bash install.sh
 # =============================================================================
 set -euo pipefail
@@ -82,7 +82,7 @@ fi
 if [ -d "${APP_DIR}/.git" ]; then
     info "Updating existing led-matrix-web repo..."
     cd "${APP_DIR}"
-    git pull origin master
+    git pull origin main
 else
     info "Cloning led-matrix-web..."
     git clone https://github.com/klf240/led-matrix-web.git "${APP_DIR}"

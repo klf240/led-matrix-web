@@ -119,19 +119,19 @@ fi
 if $FULL; then
     step "Code update (full mode - hard reset)"
     git fetch origin
-    git reset --hard origin/master
-    ok "Reset to origin/master"
+    git reset --hard origin/main
+    ok "Reset to origin/main"
 else
     step "Code update"
     git fetch origin -q
     LOCAL=$(git rev-parse HEAD)
-    REMOTE=$(git rev-parse origin/master)
+    REMOTE=$(git rev-parse origin/main)
 
     if [ "$LOCAL" = "$REMOTE" ]; then
         ok "Already up to date"
     else
         info "Updating $(git rev-parse --short $LOCAL) -> $(git rev-parse --short $REMOTE)..."
-        git merge --ff-only origin/master -q
+        git merge --ff-only origin/main -q
         ok "Code updated"
     fi
 fi
