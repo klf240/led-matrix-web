@@ -7,6 +7,8 @@ Type=simple
 User=root
 WorkingDirectory=/home/pi/led-matrix-web
 Environment=PYTHONUNBUFFERED=1
+# Point to where you built rpi-rgb-led-matrix (adjust path as needed)
+Environment=MATRIX_UTILS_DIR=/home/pi/rpi-rgb-led-matrix/utils
 ExecStart=/home/pi/led-matrix-web/venv/bin/python app.py
 Restart=always
 RestartSec=5

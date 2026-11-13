@@ -62,12 +62,7 @@
       <form action="/solid" method="post">
         <label>Colour</label>
         <input type="color" name="colour" value="#00ff00">
-        <!-- include all matrix options as hidden or shared form – for brevity we reuse a common set -->
-        <input type="hidden" name="led_rows" value="64">
-        <input type="hidden" name="led_cols" value="64">
-        <input type="hidden" name="led_brightness" id="solid_brightness" value="80">
-        <label>Brightness <span id="bri_val">80</span>%</label>
-        <input type="range" min="1" max="100" value="80" oninput="document.getElementById('solid_brightness').value=this.value;document.getElementById('bri_val').textContent=this.value">
+        <!-- matrix flags are loaded from saved settings on the backend -->
         <button class="btn-primary" type="submit">Fill</button>
       </form>
     </div>
@@ -78,28 +73,32 @@
     <!-- Matrix options (shared) -->
     <div class="card">
       <h2>Matrix Settings</h2>
-      <form id="matrixForm">
+      <form id="matrixForm" action="/save_settings" method="post">
         <div class="row">
-          <div><label>Rows</label><input type="number" name="led_rows" value="64" form="playForm"></div>
-          <div><label>Cols</label><input type="number" name="led_cols" value="64" form="playForm"></div>
+          <div><label>Rows</label><input type="number" name="led_rows" value="{{ settings.led_rows }}"></div>
+          <div><label>Cols</label><input type="number" name="led_cols" value="{{ settings.led_cols }}"></div>
         </div>
         <div class="row">
-          <div><label>Chain</label><input type="number" name="led_chain" value="1" form="playForm"></div>
-          <div><label>Parallel</label><input type="number" name="led_parallel" value="1" form="playForm"></div>
+          <div><label>Chain</label><input type="number" name="led_chain" value="{{ settings.led_chain }}"></div>
+          <div><label>Parallel</label><input type="number" name="led_parallel" value="{{ settings.led_parallel }}"></div>
         </div>
         <label>Brightness %</label>
-        <input type="number" name="led_brightness" value="80" form="playForm">
+        <input type="number" name="led_brightness" value="{{ settings.led_brightness }}">
         <label>GPIO mapping</label>
-        <select name="led_gpio_mapping" form="playForm">
-          <option value="adafruit-hat" selected>adafruit-hat</option>
-          <option value="regular">regular</option>
-          <option value="adafruit-hat-pwm">adafruit-hat-pwm</option>
+        <select name="led_gpio_mapping">
+          {% for opt in ['adafruit-hat','regular','adafruit-hat-pwm'] %}
+            <option value="{{ opt }}" {% if settings.led_gpio_mapping == opt %}selected{% endif %}>{{ opt }}</option>
+          {% endfor %}
         </select>
         <label>Pixel mapper</label>
-        <input type="text" name="led_pixel_mapper" value="V-mapper" form="playForm">
-        <label>Slowdown</label>
-        <input type="number" name="led_slowdown_gpio" value="2" form="playForm">
+        <input type="text" name="led_pixel_mapper" value="{{ settings.led_pixel_mapper }}">
+        <label>Slowdown GPIO</label>
+        <input type="number" name="led_slowdown_gpio" value="{{ settings.led_slowdown_gpio }}">
+        <button class="btn-secondary" type="submit">💾 Save Settings</button>
       </form>
+
+      <!-- Status indicator -->
+      <div id="status-bar" style="margin-top:.6rem;font-size:.85rem;opacity:.8"></div>
     </div>
 
     <!-- Images / Playlist -->
@@ -140,13 +139,7 @@
       <form action="/play_text" method="post">
         <label>Text</label>
         <input type="text" name="text" value="Hello from the Pi!" required>
-        <!-- matrix flags will be taken from the form above if we give them the same form= attribute,
-             for simplicity we hard-code the most important ones here -->
-        <input type="hidden" name="led_rows" value="64">
-        <input type="hidden" name="led_cols" value="64">
-        <input type="hidden" name="led_brightness" value="80">
-        <input type="hidden" name="led_gpio_mapping" value="adafruit-hat">
-        <input type="hidden" name="led_pixel_mapper" value="V-mapper">
+        <!-- matrix flags are loaded from saved settings on the backend -->
         <button class="btn-primary" type="submit">Scroll Text</button>
       </form>
     </div>
@@ -159,6 +152,24 @@
     const img = document.getElementById('preview');
     img.src = '/preview.jpg?' + Date.now();
   }, 2000);
+
+  // status bar – poll /status every 3 s
+  async function pollStatus() {
+    try {
+      const r = await fetch('/status');
+      const d = await r.json();
+      const el = document.getElementById('status-bar');
+      if (!el) return;
+      let html = '';
+      html += d.running ? '🟢 Process running' : '⚪ Idle';
+      html += '&nbsp;&nbsp;|&nbsp;&nbsp;';
+      html += d.viewer_ok ? '✅ viewer found' : '❌ <b>viewer NOT found</b> (' + d.viewer + ')';
+      if (!d.text_ok) html += '&nbsp;|&nbsp;❌ text-example missing';
+      el.innerHTML = html;
+    } catch(e) { /* ignore */ }
+  }
+  pollStatus();
+  setInterval(pollStatus, 3000);
 </script>
 </body>
 </html>
