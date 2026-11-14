@@ -32,7 +32,12 @@
 
   <!-- Left column -->
   <div>
-    <h1>LED Matrix Controller</h1>
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <h1>LED Matrix Controller</h1>
+      <form action="/shutdown" method="post" onsubmit="return confirm('Shutdown the Raspberry Pi?')">
+        <button class="btn-danger" type="submit" style="font-size:.85rem;padding:.4rem .8rem">⏻ Shutdown Pi</button>
+      </form>
+    </div>
 
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% for cat, msg in messages %}
@@ -116,6 +121,14 @@
 
       <!-- Status indicator -->
       <div id="status-bar" style="margin-top:.6rem;font-size:.85rem;opacity:.8"></div>
+
+      <!-- Autostart toggle -->
+      <form action="/toggle_autostart" method="post" style="margin-top:.6rem">
+        <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer">
+          <input type="checkbox" name="autostart" {% if autostart_enabled %}checked{% endif %} style="width:1.2rem;height:1.2rem">
+          Run server at startup
+        </label>
+      </form>
     </div>
 
     <!-- Images / Playlist -->

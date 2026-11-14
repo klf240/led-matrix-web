@@ -280,13 +280,25 @@ def build_matrix_flags(data=None) -> list:
 # Routes
 # ------------------------------------------------------------------
 
+def _autostart_enabled() -> bool:
+    """Check if the systemd service is enabled (starts at boot)."""
+    try:
+        r = subprocess.run(
+            ["systemctl", "is-enabled", "led-matrix-web"],
+            capture_output=True, text=True, timeout=5)
+        return r.stdout.strip() == "enabled"
+    except Exception:
+        return False
+
+
 @app.route("/")
 def index():
     files = sorted(f.name for f in UPLOAD_FOLDER.iterdir() if f.is_file())
     playlists = sorted(p.stem for p in PLAYLIST_FOLDER.glob("*.txt"))
     settings = load_settings()
+    autostart = _autostart_enabled()
     return render_template("index.html", files=files, playlists=playlists,
-                           settings=settings)
+                           settings=settings, autostart_enabled=autostart)
 
 
 @app.route("/upload", methods=["POST"])
@@ -588,6 +600,39 @@ def load_playlist(name):
     # Re-use the play_images logic by faking a form
     # (simplest is to redirect with query params or just call the same code)
     flash(f"Loaded playlist {name} – select the images and press Play", "success")
+    return redirect(url_for("index"))
+
+
+@app.route("/shutdown", methods=["POST"])
+def shutdown():
+    """Properly shut down the Raspberry Pi."""
+    log.info("Shutdown requested via web UI")
+    def _do_shutdown():
+        time.sleep(1)
+        if os.geteuid() == 0:
+            subprocess.run(["shutdown", "-h", "now"], check=False)
+        else:
+            subprocess.run(["sudo", "-n", "shutdown", "-h", "now"], check=False)
+    t = threading.Thread(target=_do_shutdown, daemon=True)
+    t.start()
+    return "Shutting down Pi... You can close this tab."
+
+
+@app.route("/toggle_autostart", methods=["POST"])
+def toggle_autostart():
+    """Enable or disable the service at boot."""
+    enabled = request.form.get("autostart") == "on"
+    action = "enable" if enabled else "disable"
+    log.info("Autostart %s", action)
+    try:
+        prefix = [] if os.geteuid() == 0 else ["sudo", "-n"]
+        subprocess.run(prefix + ["systemctl", action, "led-matrix-web"],
+                       capture_output=True, timeout=10, check=True)
+        msg = f"Server will {'start' if enabled else 'NOT start'} at boot"
+        flash(msg, "success")
+    except Exception as e:
+        log.error("Failed to %s service: %s", action, e)
+        flash(f"Failed: {e}", "error")
     return redirect(url_for("index"))
 
 

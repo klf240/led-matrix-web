@@ -109,7 +109,7 @@ info "Configuring passwordless sudo for matrix binaries..."
 SUDOERS_FILE="/etc/sudoers.d/led-matrix"
 sudo tee "${SUDOERS_FILE}" > /dev/null <<EOF
 # Allow ${USER_NAME} to run LED matrix utilities without password
-${USER_NAME} ALL=(root) NOPASSWD: ${MATRIX_UTILS}/led-image-viewer, ${MATRIX_UTILS}/text-scroller
+${USER_NAME} ALL=(root) NOPASSWD: ${MATRIX_UTILS}/led-image-viewer, ${MATRIX_UTILS}/text-scroller, /usr/sbin/shutdown, /sbin/shutdown, systemctl enable led-matrix-web, systemctl disable led-matrix-web
 EOF
 sudo chmod 0440 "${SUDOERS_FILE}"
 ok "Sudoers rule installed (${SUDOERS_FILE})"

@@ -180,7 +180,7 @@ if [ -x "${MATRIX_UTILS}/led-image-viewer" ]; then
         info "Configuring passwordless sudo for matrix binaries..."
         ${SUDO} tee /etc/sudoers.d/led-matrix > /dev/null <<EOF
 # Allow ${USER_NAME} to run LED matrix utilities without password
-${USER_NAME} ALL=(root) NOPASSWD: ${MATRIX_UTILS}/led-image-viewer, ${MATRIX_UTILS}/text-scroller
+${USER_NAME} ALL=(root) NOPASSWD: ${MATRIX_UTILS}/led-image-viewer, ${MATRIX_UTILS}/text-scroller, /usr/sbin/shutdown, /sbin/shutdown, systemctl enable led-matrix-web, systemctl disable led-matrix-web
 EOF
         ${SUDO} chmod 0440 /etc/sudoers.d/led-matrix
         ok "Sudoers rule installed"
