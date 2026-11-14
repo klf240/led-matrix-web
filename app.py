@@ -1125,4 +1125,10 @@ def _play_splash():
 
 
 if __name__ == "__main__":
+    # Play splash screen in background (don't block web server startup)
+    def _startup_splash():
+        time.sleep(2)  # wait for Flask to be ready
+        _play_splash()
+    threading.Thread(target=_startup_splash, daemon=True).start()
+
     app.run(host="0.0.0.0", port=8080, debug=False)
