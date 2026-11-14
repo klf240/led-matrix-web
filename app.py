@@ -34,6 +34,7 @@ BASE_DIR = Path(__file__).parent
 UPLOAD_FOLDER = BASE_DIR / "uploads"
 PLAYLIST_FOLDER = BASE_DIR / "playlists"
 SETTINGS_FILE  = BASE_DIR / "settings.json"
+PLAYLIST_STATE_FILE = BASE_DIR / "playlist_state.json"
 UPLOAD_FOLDER.mkdir(exist_ok=True)
 PLAYLIST_FOLDER.mkdir(exist_ok=True)
 
@@ -173,6 +174,33 @@ def save_settings(data: dict):
     log.info("Settings saved: %s", {k: v for k, v in current.items() if v})
 
 
+def _load_playlist_state() -> dict:
+    """Load saved image selections from disk."""
+    if PLAYLIST_STATE_FILE.exists():
+        try:
+            return json.loads(PLAYLIST_STATE_FILE.read_text())
+        except Exception:
+            pass
+    return {"selected": {}, "center": True}
+
+
+def _save_playlist_state(data):
+    """Save current image selections to disk for persistence."""
+    all_files = sorted(f.name for f in UPLOAD_FOLDER.iterdir() if f.is_file())
+    selected = {}
+    for i, fname in enumerate(all_files):
+        mode = data.get(f"img_mode_{i}", "delay")
+        val = data.get(f"img_val_{i}", "4")
+        is_checked = fname in data.getlist("images")
+        if is_checked:
+            selected[fname] = {"mode": mode, "val": val}
+    state = {
+        "selected": selected,
+        "center": bool(data.get("center")),
+    }
+    PLAYLIST_STATE_FILE.write_text(json.dumps(state, indent=2))
+
+
 def _persist_action(data):
     """
     Auto-save action-specific form fields to settings.json.
@@ -297,8 +325,10 @@ def index():
     playlists = sorted(p.stem for p in PLAYLIST_FOLDER.glob("*.txt"))
     settings = load_settings()
     autostart = _autostart_enabled()
+    playlist_state = _load_playlist_state()
     return render_template("index.html", files=files, playlists=playlists,
-                           settings=settings, autostart_enabled=autostart)
+                           settings=settings, autostart_enabled=autostart,
+                           playlist_state=playlist_state)
 
 
 @app.route("/upload", methods=["POST"])
@@ -334,6 +364,7 @@ def play_images():
     global current_process
     data = request.form
     _persist_action(data)
+    _save_playlist_state(data)
     images = request.form.getlist("images")
     if not images:
         flash("No images selected", "error")
@@ -594,6 +625,60 @@ def save_playlist():
     path = PLAYLIST_FOLDER / f"{name}.txt"
     path.write_text("\n".join(images))
     flash(f"Playlist '{name}' saved", "success")
+    return redirect(url_for("index"))
+
+
+@app.route("/create_stream", methods=["POST"])
+def create_stream():
+    """Create a pre-rendered stream file from selected images for fast playback."""
+    data = request.form
+    images = data.getlist("images")
+    if not images:
+        flash("No images selected", "error")
+        return redirect(url_for("index"))
+
+    name = data.get("stream_name", "").strip() or "playlist"
+    # Sanitize name
+    name = "".join(c for c in name if c.isalnum() or c in "-_").lower() or "playlist"
+    out_path = PLAYLIST_FOLDER / f"{name}.stream"
+
+    if not LED_IMAGE_VIEWER.exists():
+        flash("led-image-viewer not found – cannot create stream", "error")
+        return redirect(url_for("index"))
+
+    # Build command: led-image-viewer -O<output> [matrix flags] [per-image flags] <images>
+    prefix = [] if os.geteuid() == 0 else ["sudo", "-n"]
+    cmd = prefix + [str(LED_IMAGE_VIEWER), f"-O{out_path}"]
+    cmd += build_matrix_flags(data)
+
+    all_files = sorted(f.name for f in UPLOAD_FOLDER.iterdir() if f.is_file())
+    for img in images:
+        try:
+            idx = all_files.index(img)
+        except ValueError:
+            idx = 0
+        mode = data.get(f"img_mode_{idx}", "delay")
+        val = data.get(f"img_val_{idx}", "4")
+        if mode == "loops":
+            cmd.append(f"-l{val}")
+        else:
+            cmd.append(f"-w{val}")
+        cmd.append(str(UPLOAD_FOLDER / img))
+
+    log.info("Creating stream: %s", " ".join(cmd))
+    try:
+        result = subprocess.run(cmd, capture_output=True, timeout=120)
+        if result.returncode == 0:
+            size_kb = out_path.stat().st_size // 1024
+            flash(f"Stream '{name}.stream' created ({size_kb} KB)", "success")
+        else:
+            err = result.stderr.decode(errors="replace").strip()[:300]
+            flash(f"Stream creation failed: {err}", "error")
+    except subprocess.TimeoutExpired:
+        flash("Stream creation timed out (120s limit)", "error")
+    except Exception as e:
+        log.exception("Stream creation failed")
+        flash(f"Failed: {e}", "error")
     return redirect(url_for("index"))
 
 
