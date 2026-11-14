@@ -408,11 +408,17 @@ def play_images():
             idx = 0
         mode = data.get(f"img_mode_{idx}", "delay")
         val = data.get(f"img_val_{idx}", "4")
+        img_path = str(UPLOAD_FOLDER / img)
         if mode == "loops":
             cmd.append(f"-l{val}")
         else:
-            cmd.append(f"-w{val}")
-        cmd.append(str(UPLOAD_FOLDER / img))
+            # -t works for animations (stop after N seconds)
+            # -w works for static images (wait before next image)
+            if _is_animated(img_path):
+                cmd.append(f"-t{val}")
+            else:
+                cmd.append(f"-w{val}")
+        cmd.append(img_path)
 
     log.info("Command: %s", " ".join(cmd))
 
@@ -721,6 +727,16 @@ def delete_stream():
     return redirect(url_for("index"))
 
 
+def _is_animated(image_path: str) -> bool:
+    """Check if an image file is animated (GIF with multiple frames)."""
+    try:
+        from PIL import Image as PILImage
+        with PILImage.open(image_path) as im:
+            return getattr(im, "n_frames", 1) > 1
+    except Exception:
+        return False
+
+
 def _calc_delay_repeats(image_path: str, delay_str: str) -> int:
     """
     Calculate how many times to repeat an image in a stream to fill a delay.
@@ -784,6 +800,8 @@ def create_stream():
     prefix = [] if os.geteuid() == 0 else ["sudo", "-n"]
     cmd = prefix + [str(LED_IMAGE_VIEWER), f"-O{out_path}"]
     cmd += build_matrix_flags(data)
+    if data.get("center"):
+        cmd.append("-C")
 
     all_files = sorted(f.name for f in UPLOAD_FOLDER.iterdir() if f.is_file() and not f.name.startswith("_"))
     for img in images:
