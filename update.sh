@@ -171,6 +171,25 @@ fi
 mkdir -p "${APP_DIR}/uploads" "${APP_DIR}/playlists"
 
 # =============================================================================
+# Passwordless sudo for matrix utilities
+# =============================================================================
+if [ -x "${MATRIX_UTILS}/led-image-viewer" ]; then
+    SUDOERS_FILE="/etc/systemd/../sudoers.d/led-matrix"
+    if [ ! -f "${SUDOERS_FILE}" ] || ! grep -q "led-image-viewer" "${SUDOERS_FILE}" 2>/dev/null; then
+        step "Sudoers"
+        info "Configuring passwordless sudo for matrix binaries..."
+        ${SUDO} tee /etc/sudoers.d/led-matrix > /dev/null <<EOF
+# Allow ${USER_NAME} to run LED matrix utilities without password
+${USER_NAME} ALL=(root) NOPASSWD: ${MATRIX_UTILS}/led-image-viewer, ${MATRIX_UTILS}/text-scroller
+EOF
+        ${SUDO} chmod 0440 /etc/sudoers.d/led-matrix
+        ok "Sudoers rule installed"
+    else
+        ok "Sudoers rule OK"
+    fi
+fi
+
+# =============================================================================
 # systemd service
 # =============================================================================
 step "Service"

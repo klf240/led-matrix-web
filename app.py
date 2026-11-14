@@ -342,7 +342,7 @@ def play_images():
         return redirect(url_for("index"))
 
     # -- build command ----------------------------------------------------
-    prefix = [] if os.geteuid() == 0 else ["sudo"]
+    prefix = [] if os.geteuid() == 0 else ["sudo", "-n"]
     cmd = prefix + [str(LED_IMAGE_VIEWER)]
     cmd += build_matrix_flags(data)
 
@@ -407,7 +407,7 @@ def play_text():
         flash(msg, "error")
         return redirect(url_for("index"))
 
-    prefix = [] if os.geteuid() == 0 else ["sudo"]
+    prefix = [] if os.geteuid() == 0 else ["sudo", "-n"]
     cmd = prefix + [str(LED_TEXT)]
     cmd += build_matrix_flags(data)
     font_path = MATRIX_UTILS.parent / "fonts" / "9x18.bdf"
@@ -485,7 +485,7 @@ def solid():
     tmp = UPLOAD_FOLDER / "_solid.png"
     img.save(tmp)
 
-    prefix = [] if os.geteuid() == 0 else ["sudo"]
+    prefix = [] if os.geteuid() == 0 else ["sudo", "-n"]
     cmd = prefix + [str(LED_IMAGE_VIEWER)]
     cmd += build_matrix_flags(data)
     cmd.append(str(tmp))
@@ -537,11 +537,22 @@ def status():
     running = current_process is not None and current_process.poll() is None
     viewer_ok = LED_IMAGE_VIEWER.exists()
     text_ok   = LED_TEXT.exists()
+
+    # Check if we can actually run the viewer (sudo works without password)
+    sudo_ok = True
+    if viewer_ok and os.geteuid() != 0:
+        test = subprocess.run(
+            ["sudo", "-n", str(LED_IMAGE_VIEWER), "--help"],
+            capture_output=True, timeout=5)
+        sudo_ok = (test.returncode == 0) or (b"usage" in test.stdout.lower()) \
+                  or (b"Options" in test.stdout) or (b"led-image-viewer" in test.stdout)
+
     return jsonify({
-        "running":  running,
-        "viewer":   str(LED_IMAGE_VIEWER),
+        "running":   running,
+        "viewer":    str(LED_IMAGE_VIEWER),
         "viewer_ok": viewer_ok,
         "text_ok":   text_ok,
+        "sudo_ok":   sudo_ok,
     })
 
 

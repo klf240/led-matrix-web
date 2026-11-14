@@ -103,6 +103,18 @@ ok "Python dependencies installed"
 mkdir -p "${APP_DIR}/uploads" "${APP_DIR}/playlists"
 
 # =============================================================================
+# Step 4b – Passwordless sudo for matrix utilities
+# =============================================================================
+info "Configuring passwordless sudo for matrix binaries..."
+SUDOERS_FILE="/etc/sudoers.d/led-matrix"
+sudo tee "${SUDOERS_FILE}" > /dev/null <<EOF
+# Allow ${USER_NAME} to run LED matrix utilities without password
+${USER_NAME} ALL=(root) NOPASSWD: ${MATRIX_UTILS}/led-image-viewer, ${MATRIX_UTILS}/text-scroller
+EOF
+sudo chmod 0440 "${SUDOERS_FILE}"
+ok "Sudoers rule installed (${SUDOERS_FILE})"
+
+# =============================================================================
 # Step 5 – systemd service
 # =============================================================================
 info "Installing systemd service..."

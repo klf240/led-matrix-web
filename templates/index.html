@@ -202,15 +202,20 @@
       const el = document.getElementById('status-bar');
       if (!el) return;
       let html = '';
-      html += d.running ? '🟢 Process running' : '⚪ Idle';
+      html += d.running ? '🟢 Running' : '⚪ Idle';
       html += '&nbsp;&nbsp;|&nbsp;&nbsp;';
-      html += d.viewer_ok ? '✅ viewer found' : '❌ <b>viewer NOT found</b> (' + d.viewer + ')';
-      if (!d.text_ok) html += '&nbsp;|&nbsp;❌ text-example missing';
+      if (d.viewer_ok) {
+        html += '✅ viewer';
+        if (!d.sudo_ok) html += ' ⚠️ <b>no sudo access</b>';
+      } else {
+        html += '❌ <b>viewer NOT found</b>';
+      }
+      if (!d.text_ok) html += '&nbsp;|&nbsp;❌ text-scroller missing';
       el.innerHTML = html;
     } catch(e) { /* ignore */ }
   }
   pollStatus();
-  setInterval(pollStatus, 3000);
+  setInterval(pollStatus, 5000);
 </script>
 </body>
 </html>
