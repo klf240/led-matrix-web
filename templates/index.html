@@ -138,6 +138,18 @@
           Run server at startup
         </label>
       </form>
+
+      <!-- Splash screen toggle -->
+      <form action="/save_settings" method="post" style="margin-top:.4rem">
+        <input type="hidden" name="splash_enabled" value="{{ '1' if settings.splash_enabled else '0' }}">
+        <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer">
+          <input type="checkbox" name="splash_override" {% if settings.splash_enabled %}checked{% endif %}
+                 onchange="this.form.querySelector('[name=splash_enabled]').value = this.checked ? '1' : '0'"
+                 style="width:1.2rem;height:1.2rem">
+          Play splash screen at startup
+        </label>
+        <button type="submit" class="btn-secondary" style="margin-top:.3rem;font-size:.8rem;padding:.2rem .5rem">Save</button>
+      </form>
     </div>
     </div>
 
@@ -159,7 +171,9 @@
             <input type="checkbox" name="images" value="{{ f }}" id="img_{{ loop.index0 }}"
                    {% if f in playlist_state.selected %}checked{% endif %}
                    style="width:1rem;height:1rem;flex-shrink:0">
-            <label for="img_{{ loop.index0 }}" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer">{{ f }}</label>
+            <label for="img_{{ loop.index0 }}" class="renameable" data-folder="uploads" data-name="{{ f }}"
+       style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer"
+       title="Double-click to rename">{{ f }}</label>
             <select name="img_mode_{{ loop.index0 }}" style="width:auto;max-width:62px;padding:.15rem .2rem;font-size:.8rem;flex-shrink:0">
               <option value="delay" {% if saved.get('mode', 'delay') == 'delay' %}selected{% endif %}>Delay</option>
               {% if f in animated_set %}
@@ -193,7 +207,9 @@
           <div style="display:flex;align-items:center;gap:.4rem;padding:.35rem 0;border-bottom:1px solid #334155">
             <input type="checkbox" name="streams" value="{{ s }}" id="strm_{{ loop.index0 }}"
                    style="width:1rem;height:1rem;flex-shrink:0">
-            <label for="strm_{{ loop.index0 }}" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer">{{ s }}</label>
+            <label for="strm_{{ loop.index0 }}" class="renameable" data-folder="playlists" data-name="{{ s }}"
+       style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer"
+       title="Double-click to rename">{{ s }}</label>
             <select name="stream_loops_{{ loop.index0 }}" style="width:auto;max-width:72px;padding:.15rem .2rem;font-size:.8rem;flex-shrink:0">
               <option value="0" selected>Forever</option>
               <option value="1">1x</option>
@@ -360,6 +376,26 @@
     });
     return true;
   }
+
+  // Double-click to rename images and streams
+  document.querySelectorAll('.renameable').forEach(el => {
+    el.addEventListener('dblclick', function(e) {
+      e.preventDefault();
+      const oldName = this.dataset.name;
+      const folder = this.dataset.folder;
+      const newName = prompt('Rename \'' + oldName + '\' to:', oldName);
+      if (newName && newName !== oldName) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/rename_file';
+        form.innerHTML = '<input type="hidden" name="old_name" value="' + oldName + '">' +
+                         '<input type="hidden" name="new_name" value="' + newName + '">' +
+                         '<input type="hidden" name="folder" value="' + folder + '">';
+        document.body.appendChild(form);
+        form.submit();
+      }
+    });
+  });
 
   pollStatus();
   setInterval(pollStatus, 5000);

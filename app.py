@@ -140,6 +140,7 @@ DEFAULT_SETTINGS = {
     "led_inverse":         False,
     "led_no_hardware_pulse": False,
     # --- Action defaults (auto-saved on each play/solid/text action) ---
+    "splash_enabled":      True,
     "solid_color":         "#00ff00",
     "center":              True,
     "wait":                "4",
@@ -910,6 +911,41 @@ def toggle_autostart():
     return redirect(url_for("index"))
 
 
+@app.route("/rename_file", methods=["POST"])
+def rename_file():
+    """Rename an uploaded image or stream file."""
+    old_name = request.form.get("old_name", "").strip()
+    new_name = request.form.get("new_name", "").strip()
+    folder_type = request.form.get("folder", "uploads")  # uploads or playlists
+
+    if not old_name or not new_name:
+        flash("Both old and new name required", "error")
+        return redirect(url_for("index"))
+
+    # Sanitize - prevent path traversal
+    safe_old = Path(old_name).name
+    safe_new = Path(new_name).name
+    if ".." in safe_old or ".." in safe_new or safe_new.startswith("."):
+        flash("Invalid filename", "error")
+        return redirect(url_for("index"))
+
+    base_folder = UPLOAD_FOLDER if folder_type == "uploads" else PLAYLIST_FOLDER
+    old_path = base_folder / safe_old
+    new_path = base_folder / safe_new
+
+    if not old_path.exists():
+        flash(f"'{safe_old}' not found", "error")
+        return redirect(url_for("index"))
+    if new_path.exists():
+        flash(f"'{safe_new}' already exists", "error")
+        return redirect(url_for("index"))
+
+    old_path.rename(new_path)
+    log.info("Renamed %s/%s -> %s", folder_type, safe_old, safe_new)
+    flash(f"Renamed to '{safe_new}'", "success")
+    return redirect(url_for("index"))
+
+
 # ------------------------------------------------------------------
 # Live preview – very lightweight
 # We keep a small JPEG that the UI can poll.
@@ -1056,6 +1092,36 @@ def _render_text_preview(pw, ph, total_cols, rows):
 
     d.text((x, text_y), text, fill=(255, 255, 255), font=font)
     return img
+
+
+def _play_splash():
+    """Play the splash screen GIF once on startup if enabled."""
+    s = load_settings()
+    if not s.get("splash_enabled", True):
+        log.info("Splash screen disabled")
+        return
+    splash = UPLOAD_FOLDER / "_splashscreen.gif"
+    if not splash.exists():
+        log.info("No _splashscreen.gif found - skipping splash")
+        return
+    if not LED_IMAGE_VIEWER.exists():
+        log.warning("led-image-viewer not found - cannot play splash")
+        return
+
+    prefix = [] if os.geteuid() == 0 else ["sudo", "-n"]
+    cmd = prefix + [str(LED_IMAGE_VIEWER)]
+    cmd += build_matrix_flags()
+    cmd.append("-l1")  # play exactly 1 loop
+    cmd.append(str(splash))
+
+    log.info("Playing splash screen: %s", " ".join(cmd))
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        # Wait for it to finish (1 loop should be a few seconds)
+        proc.wait(timeout=30)
+        log.info("Splash screen complete")
+    except Exception as e:
+        log.warning("Splash screen failed: %s", e)
 
 
 if __name__ == "__main__":
