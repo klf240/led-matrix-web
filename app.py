@@ -350,8 +350,12 @@ def play_images():
         cmd.append("-C")
     if data.get("wait"):
         cmd += [f"-w{data['wait']}"]
-    if data.get("loop"):
-        cmd += [f"-l{data['loop']}"]
+    loop_val = data.get("loop", "0")
+    if loop_val == "0":
+        # Static images need -f to cycle forever; -l only works for GIFs
+        cmd.append("-f")
+    else:
+        cmd += ["-f", f"-l{loop_val}"]
     if data.get("delay") and data["delay"] != "-1":
         cmd += [f"-D{data['delay']}"]
 
@@ -488,6 +492,7 @@ def solid():
     prefix = [] if os.geteuid() == 0 else ["sudo", "-n"]
     cmd = prefix + [str(LED_IMAGE_VIEWER)]
     cmd += build_matrix_flags(data)
+    cmd.append("-f")  # keep displaying forever (single image loop)
     cmd.append(str(tmp))
 
     log.info("Command: %s", " ".join(cmd))
