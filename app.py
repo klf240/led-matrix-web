@@ -186,7 +186,7 @@ def _load_playlist_state() -> dict:
 
 def _save_playlist_state(data):
     """Save current image selections to disk for persistence."""
-    all_files = sorted(f.name for f in UPLOAD_FOLDER.iterdir() if f.is_file())
+    all_files = sorted(f.name for f in UPLOAD_FOLDER.iterdir() if f.is_file() and not f.name.startswith("_"))
     selected = {}
     for i, fname in enumerate(all_files):
         mode = data.get(f"img_mode_{i}", "delay")
@@ -321,13 +321,15 @@ def _autostart_enabled() -> bool:
 
 @app.route("/")
 def index():
-    files = sorted(f.name for f in UPLOAD_FOLDER.iterdir() if f.is_file())
+    files = sorted(f.name for f in UPLOAD_FOLDER.iterdir() if f.is_file() and not f.name.startswith("_"))
+    streams = sorted(p.name for p in PLAYLIST_FOLDER.glob("*.stream"))
     playlists = sorted(p.stem for p in PLAYLIST_FOLDER.glob("*.txt"))
     settings = load_settings()
     autostart = _autostart_enabled()
     playlist_state = _load_playlist_state()
     return render_template("index.html", files=files, playlists=playlists,
-                           settings=settings, autostart_enabled=autostart,
+                           streams=streams, settings=settings,
+                           autostart_enabled=autostart,
                            playlist_state=playlist_state)
 
 
@@ -398,7 +400,7 @@ def play_images():
     # Per-image flags: -w<sec> for delay, -l<n> for animation loops
     # Indices in form fields refer to position in the FULL file list,
     # so we must look up each selected image's original index.
-    all_files = sorted(f.name for f in UPLOAD_FOLDER.iterdir() if f.is_file())
+    all_files = sorted(f.name for f in UPLOAD_FOLDER.iterdir() if f.is_file() and not f.name.startswith("_"))
     for img in images:
         try:
             idx = all_files.index(img)
@@ -628,6 +630,64 @@ def save_playlist():
     return redirect(url_for("index"))
 
 
+@app.route("/play_stream", methods=["POST"])
+def play_stream():
+    """Play a pre-rendered stream file on the matrix."""
+    global current_process
+    data = request.form
+    _persist_action(data)
+    streams = data.getlist("streams")
+    if not streams:
+        flash("No stream selected", "error")
+        return redirect(url_for("index"))
+
+    if not LED_IMAGE_VIEWER.exists():
+        flash("led-image-viewer not found", "error")
+        return redirect(url_for("index"))
+
+    # Build command for first selected stream (or cycle through multiple)
+    prefix = [] if os.geteuid() == 0 else ["sudo", "-n"]
+    cmd = prefix + [str(LED_IMAGE_VIEWER)]
+    cmd += build_matrix_flags(data)
+
+    if data.get("center"):
+        cmd.append("-C")
+    cmd.append("-f")  # cycle forever through provided streams
+
+    for stream_name in streams:
+        # Loop count control per stream
+        s_idx = streams.index(stream_name)
+        loops = data.get(f"stream_loops_{s_idx}", "0")
+        if loops and loops != "0":
+            cmd.append(f"-l{loops}")
+        cmd.append(str(PLAYLIST_FOLDER / stream_name))
+
+    log.info("Command: %s", " ".join(cmd))
+    kill_current()
+    try:
+        current_process = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        time.sleep(0.5)
+        if current_process.poll() is not None:
+            err = (current_process.stderr.read().decode(errors="replace")
+                   if current_process.stderr else "")
+            flash(f"Stream playback failed: {err.strip()[:300]}", "error")
+            current_process = None
+        else:
+            display_state.update({
+                "mode": "image",
+                "images": [str(PLAYLIST_FOLDER / s) for s in streams],
+                "wait": 1.0,
+                "center": bool(data.get("center")),
+                "start_time": time.time(),
+            })
+            flash(f"Playing {len(streams)} stream(s)", "success")
+    except Exception as e:
+        log.exception("Failed to start stream playback")
+        flash(f"Failed: {e}", "error")
+    return redirect(url_for("index"))
+
+
 @app.route("/create_stream", methods=["POST"])
 def create_stream():
     """Create a pre-rendered stream file from selected images for fast playback."""
@@ -651,7 +711,7 @@ def create_stream():
     cmd = prefix + [str(LED_IMAGE_VIEWER), f"-O{out_path}"]
     cmd += build_matrix_flags(data)
 
-    all_files = sorted(f.name for f in UPLOAD_FOLDER.iterdir() if f.is_file())
+    all_files = sorted(f.name for f in UPLOAD_FOLDER.iterdir() if f.is_file() and not f.name.startswith("_"))
     for img in images:
         try:
             idx = all_files.index(img)

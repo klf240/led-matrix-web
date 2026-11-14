@@ -164,6 +164,31 @@
         </div>
       </form>
 
+      <!-- Streams -->
+      {% if streams %}
+      <hr>
+      <h3 style="margin:.6rem 0 .3rem;font-size:.95rem">Streams</h3>
+      <form id="streamPlayForm" action="/play_stream" method="post">
+        <div class="file-list" style="max-height:180px">
+          {% for s in streams %}
+          <div style="display:flex;align-items:center;gap:.4rem;padding:.35rem 0;border-bottom:1px solid #334155">
+            <input type="checkbox" name="streams" value="{{ s }}" id="strm_{{ loop.index0 }}"
+                   style="width:1rem;height:1rem;flex-shrink:0">
+            <label for="strm_{{ loop.index0 }}" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer">{{ s }}</label>
+            <select name="stream_loops_{{ loop.index0 }}" style="width:auto;max-width:72px;padding:.15rem .2rem;font-size:.8rem;flex-shrink:0">
+              <option value="0" selected>Forever</option>
+              <option value="1">1x</option>
+              <option value="3">3x</option>
+              <option value="5">5x</option>
+              <option value="10">10x</option>
+            </select>
+          </div>
+          {% endfor %}
+        </div>
+        <button class="btn-primary" type="submit" style="margin-top:.4rem">▶ Play streams</button>
+      </form>
+      {% endif %}
+
       <form action="/stop" method="post" style="display:inline;margin-top:.4rem">
         <button class="btn-danger" type="submit">■ Stop</button>
       </form>
