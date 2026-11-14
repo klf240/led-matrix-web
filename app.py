@@ -608,12 +608,24 @@ def status():
                    and "a terminal is required" not in err
                    and "no askpass program" not in err)
 
+    import shutil as _shutil
+    try:
+        usage = _shutil.disk_usage(str(BASE_DIR))
+        disk = {
+            "total_mb": usage.total // (1024 * 1024),
+            "free_mb": usage.free // (1024 * 1024),
+            "percent": round((usage.used / usage.total) * 100, 1),
+        }
+    except Exception:
+        disk = {"total_mb": 0, "free_mb": 0, "percent": 0}
+
     return jsonify({
         "running":   running,
         "viewer":    str(LED_IMAGE_VIEWER),
         "viewer_ok": viewer_ok,
         "text_ok":   text_ok,
         "sudo_ok":   sudo_ok,
+        "disk":      disk,
     })
 
 
@@ -685,6 +697,27 @@ def play_stream():
     except Exception as e:
         log.exception("Failed to start stream playback")
         flash(f"Failed: {e}", "error")
+    return redirect(url_for("index"))
+
+
+@app.route("/delete_stream", methods=["POST"])
+def delete_stream():
+    """Delete selected stream files."""
+    streams = request.form.getlist("streams")
+    if not streams:
+        flash("No streams selected", "error")
+        return redirect(url_for("index"))
+    deleted = []
+    for s in streams:
+        safe_name = Path(s).name
+        path = PLAYLIST_FOLDER / safe_name
+        if path.exists() and path.suffix == ".stream":
+            path.unlink()
+            deleted.append(safe_name)
+    if deleted:
+        flash(f"Deleted {len(deleted)} stream(s)", "success")
+    else:
+        flash("No valid streams to delete", "error")
     return redirect(url_for("index"))
 
 
