@@ -721,6 +721,42 @@ def delete_stream():
     return redirect(url_for("index"))
 
 
+def _calc_delay_repeats(image_path: str, delay_str: str) -> int:
+    """
+    Calculate how many times to repeat an image in a stream to fill a delay.
+    For animated files: get one-loop duration, compute ceil(delay / duration).
+    For static images: return 1 (no meaningful repetition possible).
+    """
+    import math
+    try:
+        delay = float(delay_str)
+    except (ValueError, TypeError):
+        return 1
+
+    if delay <= 0:
+        return 1
+
+    try:
+        from PIL import Image as PILImage
+        with PILImage.open(image_path) as im:
+            n_frames = getattr(im, "n_frames", 1)
+            if n_frames > 1:
+                # Animated file - sum all frame durations (in ms)
+                total_ms = 0
+                for frame in range(n_frames):
+                    im.seek(frame)
+                    dur = im.info.get("duration", 100)
+                    total_ms += dur
+                loop_seconds = total_ms / 1000.0
+                if loop_seconds > 0:
+                    return max(1, math.ceil(delay / loop_seconds))
+            # Static image - can't meaningfully repeat for delay in a stream
+            return 1
+    except Exception as e:
+        log.warning("Could not read duration for %s: %s", image_path, e)
+        return 1
+
+
 @app.route("/create_stream", methods=["POST"])
 def create_stream():
     """Create a pre-rendered stream file from selected images for fast playback."""
@@ -757,11 +793,20 @@ def create_stream():
             idx = 0
         mode = data.get(f"img_mode_{idx}", "delay")
         val = data.get(f"img_val_{idx}", "4")
+        img_path = str(UPLOAD_FOLDER / img)
+
         if mode == "loops":
-            cmd.append(f"-l{val}")
+            # Repeat the image N times in the stream
+            try:
+                repeats = max(1, int(val))
+            except (ValueError, TypeError):
+                repeats = 1
         else:
-            cmd.append(f"-w{val}")
-        cmd.append(str(UPLOAD_FOLDER / img))
+            # Delay mode: figure out how many full loops fill the delay
+            repeats = _calc_delay_repeats(img_path, val)
+
+        for _ in range(repeats):
+            cmd.append(img_path)
 
     log.info("Creating stream: %s", " ".join(cmd))
     try:
