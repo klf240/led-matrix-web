@@ -96,9 +96,11 @@
 
   <!-- Right column -->
   <div>
-    <!-- Server Settings moved to modal -->
-    <div class="card" id="settingsCardPlaceholder" style="display:none">
-      <h2>Server Settings</h2>
+    <!-- Server Settings Modal -->
+    <div id="settingsModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center">
+    <div class="card" style="max-width:480px;width:90%;max-height:85vh;overflow:auto;position:relative">
+      <button onclick="document.getElementById('settingsModal').style.display='none'" style="position:absolute;top:.8rem;right:1rem;background:none;border:none;color:#e2e8f0;font-size:1.4rem;cursor:pointer">&times;</button>
+      <h2>⚙ Server Settings</h2>
       <form id="matrixForm" action="/save_settings" method="post">
         <div class="row">
           <div><label>Rows</label><input type="number" name="led_rows" value="{{ settings.led_rows }}"></div>
@@ -133,10 +135,7 @@
           Run server at startup
         </label>
       </form>
-  </div>
-</div>
-
-    <div class="card" style="display:none">
+    </div>
     </div>
 
     <!-- Images / Playlist -->
@@ -248,11 +247,7 @@
   </div>
 </div>
 
-<!-- Server Settings Modal -->
-<div id="settingsModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center">
-  <div style="background:#1e293b;border-radius:12px;padding:1.5rem;max-width:480px;width:90%;max-height:85vh;overflow:auto;position:relative">
-    <button onclick="this.closest('#settingsModal').style.display='none'" style="position:absolute;top:.8rem;right:1rem;background:none;border:none;color:#e2e8f0;font-size:1.4rem;cursor:pointer">&times;</button>
-    <h2 style="margin-top:0">⚙ Server Settings</h2>
+<script>
   // Color picker → swatch sync
   function setColor(hex) {
     document.getElementById('colorPicker').value = hex;
