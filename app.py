@@ -1111,6 +1111,7 @@ def _play_splash():
     prefix = [] if os.geteuid() == 0 else ["sudo", "-n"]
     cmd = prefix + [str(LED_IMAGE_VIEWER)]
     cmd += build_matrix_flags()
+    cmd.append("-C")   # center on matrix
     cmd.append("-l1")  # play exactly 1 loop
     cmd.append(str(splash))
 
