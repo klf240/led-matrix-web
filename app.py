@@ -725,6 +725,11 @@ def delete_stream():
 def create_stream():
     """Create a pre-rendered stream file from selected images for fast playback."""
     data = request.form
+    # Debug: log all form fields received
+    log.info("create_stream form keys: %s", list(data.keys()))
+    for k in data.keys():
+        if k.startswith("img_") or k == "images":
+            log.info("  %s = %s", k, data.get(k))
     images = data.getlist("images")
     if not images:
         flash("No images selected", "error")
