@@ -322,6 +322,11 @@ def _autostart_enabled() -> bool:
 @app.route("/")
 def index():
     files = sorted(f.name for f in UPLOAD_FOLDER.iterdir() if f.is_file() and not f.name.startswith("_"))
+    # Determine which files are animated (for UI: hide Loops option on static images)
+    animated_set = set()
+    for fname in files:
+        if _is_animated(str(UPLOAD_FOLDER / fname)):
+            animated_set.add(fname)
     streams = sorted(p.name for p in PLAYLIST_FOLDER.glob("*.stream"))
     playlists = sorted(p.stem for p in PLAYLIST_FOLDER.glob("*.txt"))
     settings = load_settings()
@@ -330,7 +335,8 @@ def index():
     return render_template("index.html", files=files, playlists=playlists,
                            streams=streams, settings=settings,
                            autostart_enabled=autostart,
-                           playlist_state=playlist_state)
+                           playlist_state=playlist_state,
+                           animated_set=animated_set)
 
 
 @app.route("/upload", methods=["POST"])
@@ -741,7 +747,7 @@ def _calc_delay_repeats(image_path: str, delay_str: str) -> int:
     """
     Calculate how many times to repeat an image in a stream to fill a delay.
     For animated files: get one-loop duration, compute ceil(delay / duration).
-    For static images: return 1 (no meaningful repetition possible).
+    For static images: each repeat shows for ~1 second, so repeats = ceil(delay).
     """
     import math
     try:
@@ -766,8 +772,8 @@ def _calc_delay_repeats(image_path: str, delay_str: str) -> int:
                 loop_seconds = total_ms / 1000.0
                 if loop_seconds > 0:
                     return max(1, math.ceil(delay / loop_seconds))
-            # Static image - can't meaningfully repeat for delay in a stream
-            return 1
+            # Static image - each repeat displays for ~1 second
+            return max(1, math.ceil(delay))
     except Exception as e:
         log.warning("Could not read duration for %s: %s", image_path, e)
         return 1
@@ -854,6 +860,21 @@ def load_playlist(name):
     # (simplest is to redirect with query params or just call the same code)
     flash(f"Loaded playlist {name} – select the images and press Play", "success")
     return redirect(url_for("index"))
+
+
+@app.route("/reboot", methods=["POST"])
+def reboot():
+    """Reboot the Raspberry Pi."""
+    log.info("Reboot requested via web UI")
+    def _do_reboot():
+        time.sleep(1)
+        if os.geteuid() == 0:
+            subprocess.run(["reboot"], check=False)
+        else:
+            subprocess.run(["sudo", "-n", "reboot"], check=False)
+    t = threading.Thread(target=_do_reboot, daemon=True)
+    t.start()
+    return "Rebooting Pi... You can close this tab."
 
 
 @app.route("/shutdown", methods=["POST"])
