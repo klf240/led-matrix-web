@@ -637,8 +637,10 @@ def _render_image_preview(pw, ph, total_cols, rows):
     if not images:
         return PILImage.new("RGB", (pw, ph), (0, 0, 0))
 
-    # Determine which image is currently showing
-    elapsed = time.time() - start
+    # Determine which image is currently showing.
+    # led-image-viewer has ~1s startup before first frame is visible.
+    STARTUP_OFFSET = 1.0
+    elapsed = max(0, time.time() - start - STARTUP_OFFSET)
     idx = int(elapsed / wait) % len(images)
     path = images[idx]
 

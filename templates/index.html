@@ -59,11 +59,28 @@
     <!-- Solid color -->
     <div class="card">
       <h2>Solid Color</h2>
-      <form action="/solid" method="post">
+      <form action="/solid" method="post" id="solidForm">
         <label>Color</label>
-        <input type="color" name="color" value="{{ settings.solid_color }}">
-        <!-- matrix flags are loaded from saved settings on the backend -->
-        <button class="btn-primary" type="submit">Fill</button>
+        <input type="color" name="color" id="colorPicker" value="{{ settings.solid_color }}">
+
+        <!-- Presets -->
+        <div style="display:flex;gap:.4rem;margin-top:.5rem;flex-wrap:wrap">
+          <button type="button" class="btn-preset" onclick="setColor('#FFF8E7')" title="Soft White"
+                  style="background:#FFF8E7;width:28px;height:28px;border-radius:4px;border:2px solid #555;padding:0"></button>
+          <button type="button" class="btn-preset" onclick="setColor('#FFD9A0')" title="Warm White"
+                  style="background:#FFD9A0;width:28px;height:28px;border-radius:4px;border:2px solid #555;padding:0"></button>
+          <button type="button" class="btn-preset" onclick="setColor('#FFFFFF')" title="Daylight"
+                  style="background:#FFFFFF;width:28px;height:28px;border-radius:4px;border:2px solid #555;padding:0"></button>
+        </div>
+
+        <!-- Color swatch + On/Off toggle -->
+        <div style="display:flex;align-items:center;gap:.8rem;margin-top:.8rem">
+          <div id="colorSwatch" style="width:40px;height:40px;border-radius:6px;border:2px solid #555;background:{{ settings.solid_color }}"></div>
+          <button type="submit" class="btn-primary" id="solidOnBtn">ON</button>
+        </div>
+      </form>
+      <form action="/stop" method="post" style="display:inline;margin-top:.4rem">
+        <button class="btn-danger" type="submit" style="margin-left:.8rem">OFF</button>
       </form>
     </div>
   </div>
@@ -162,6 +179,15 @@
 </div>
 
 <script>
+  // Color picker → swatch sync
+  function setColor(hex) {
+    document.getElementById('colorPicker').value = hex;
+    document.getElementById('colorSwatch').style.background = hex;
+  }
+  document.getElementById('colorPicker').addEventListener('input', function() {
+    document.getElementById('colorSwatch').style.background = this.value;
+  });
+
   // live preview refresh (500ms for smooth text animation)
   setInterval(() => {
     const img = document.getElementById('preview');
