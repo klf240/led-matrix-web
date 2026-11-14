@@ -194,7 +194,7 @@
       </form>
 
       <hr>
-      <form action="/create_stream" method="post" id="streamForm">
+      <form action="/create_stream" method="post" id="streamForm" onsubmit="return gatherImagesForStream()">
         <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
           <input type="text" name="stream_name" placeholder="my-stream" style="max-width:140px">
           <button class="btn-secondary" type="submit">💾 Save as Stream</button>
@@ -266,6 +266,55 @@
       el.innerHTML = html;
     } catch(e) { /* ignore */ }
   }
+  // Copy image selections into the stream form before submit
+  function gatherImagesForStream() {
+    const streamForm = document.getElementById('streamForm');
+    const playForm = document.getElementById('playForm');
+    // Remove any previously injected hidden fields
+    streamForm.querySelectorAll('.injected-img').forEach(el => el.remove());
+    // Copy checked images and their mode/val
+    const checkboxes = playForm.querySelectorAll('input[name="images"]:checked');
+    if (checkboxes.length === 0) {
+      alert('No images selected in the list above.');
+      return false;
+    }
+    checkboxes.forEach(cb => {
+      const hidden = document.createElement('input');
+      hidden.type = 'hidden';
+      hidden.name = 'images';
+      hidden.value = cb.value;
+      hidden.className = 'injected-img';
+      streamForm.appendChild(hidden);
+    });
+    // Copy center checkbox
+    const centerCb = playForm.querySelector('input[name="center"]');
+    if (centerCb && centerCb.checked) {
+      const h = document.createElement('input');
+      h.type = 'hidden'; h.name = 'center'; h.value = '1';
+      h.className = 'injected-img';
+      streamForm.appendChild(h);
+    }
+    // Copy per-image mode and val fields (always send all, backend filters by selected)
+    const allCbs = playForm.querySelectorAll('input[name="images"]');
+    allCbs.forEach((cb, i) => {
+      const modeSel = playForm.querySelector(`select[name="img_mode_${i}"]`);
+      const valInput = playForm.querySelector(`input[name="img_val_${i}"]`);
+      if (modeSel) {
+        const h1 = document.createElement('input');
+        h1.type = 'hidden'; h1.name = `img_mode_${i}`; h1.value = modeSel.value;
+        h1.className = 'injected-img';
+        streamForm.appendChild(h1);
+      }
+      if (valInput) {
+        const h2 = document.createElement('input');
+        h2.type = 'hidden'; h2.name = `img_val_${i}`; h2.value = valInput.value;
+        h2.className = 'injected-img';
+        streamForm.appendChild(h2);
+      }
+    });
+    return true;
+  }
+
   pollStatus();
   setInterval(pollStatus, 5000);
 </script>
