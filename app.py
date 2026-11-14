@@ -544,8 +544,12 @@ def status():
         test = subprocess.run(
             ["sudo", "-n", str(LED_IMAGE_VIEWER), "--help"],
             capture_output=True, timeout=5)
-        sudo_ok = (test.returncode == 0) or (b"usage" in test.stdout.lower()) \
-                  or (b"Options" in test.stdout) or (b"led-image-viewer" in test.stdout)
+        # If sudo itself failed, stderr will say "password is required"
+        # or "a terminal is required". Any other output means sudo worked.
+        err = test.stderr.decode(errors="replace").lower()
+        sudo_ok = ("password is required" not in err
+                   and "a terminal is required" not in err
+                   and "no askpass program" not in err)
 
     return jsonify({
         "running":   running,
