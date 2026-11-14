@@ -365,10 +365,16 @@ def play_images():
     cmd.append("-f")
 
     # Per-image flags: -w<sec> for delay, -l<n> for animation loops
-    # These are positional: each flag applies to the image following it
-    for i, img in enumerate(images):
-        mode = data.get(f"img_mode_{i}", "delay")
-        val = data.get(f"img_val_{i}", "4")
+    # Indices in form fields refer to position in the FULL file list,
+    # so we must look up each selected image's original index.
+    all_files = sorted(f.name for f in UPLOAD_FOLDER.iterdir() if f.is_file())
+    for img in images:
+        try:
+            idx = all_files.index(img)
+        except ValueError:
+            idx = 0
+        mode = data.get(f"img_mode_{idx}", "delay")
+        val = data.get(f"img_val_{idx}", "4")
         if mode == "loops":
             cmd.append(f"-l{val}")
         else:
