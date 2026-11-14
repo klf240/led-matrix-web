@@ -353,25 +353,26 @@ def play_images():
         flash(f"File(s) not found on disk: {', '.join(missing)}", "error")
         return redirect(url_for("index"))
 
-    # -- build command ----------------------------------------------------
+    # -- build command with per-image positional flags ----------------------
     prefix = [] if os.geteuid() == 0 else ["sudo", "-n"]
     cmd = prefix + [str(LED_IMAGE_VIEWER)]
     cmd += build_matrix_flags(data)
 
     if data.get("center"):
         cmd.append("-C")
-    if data.get("wait"):
-        cmd += [f"-w{data['wait']}"]
-    loop_val = data.get("loop", "0")
-    if loop_val == "0":
-        # Static images need -f to cycle forever; -l only works for GIFs
-        cmd.append("-f")
-    else:
-        cmd += ["-f", f"-l{loop_val}"]
-    if data.get("delay") and data["delay"] != "-1":
-        cmd += [f"-D{data['delay']}"]
 
-    for img in images:
+    # -f keeps the process alive (cycle forever through provided images)
+    cmd.append("-f")
+
+    # Per-image flags: -w<sec> for delay, -l<n> for animation loops
+    # These are positional: each flag applies to the image following it
+    for i, img in enumerate(images):
+        mode = data.get(f"img_mode_{i}", "delay")
+        val = data.get(f"img_val_{i}", "4")
+        if mode == "loops":
+            cmd.append(f"-l{val}")
+        else:
+            cmd.append(f"-w{val}")
         cmd.append(str(UPLOAD_FOLDER / img))
 
     log.info("Command: %s", " ".join(cmd))
