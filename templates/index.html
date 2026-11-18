@@ -21,7 +21,9 @@
   .flash { padding:.7rem 1rem; border-radius:6px; margin-bottom:1rem; }
   .flash.success { background:#14532d; }
   .flash.error   { background:#7f1d1d; }
-  .preview { width:100%; max-width:512px; border-radius:8px; background:#000; image-rendering:pixelated; }
+  .preview { display:block; margin:0 auto; width:auto; height:auto;
+             max-width:100%; max-height:512px; border-radius:8px;
+             background:#000; image-rendering:pixelated; }
   .file-list { max-height:220px; overflow:auto; }
   .file-list label { display:flex; align-items:center; gap:.5rem; }
   .row { display:grid; grid-template-columns:1fr 1fr; gap:.8rem; }

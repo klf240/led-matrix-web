@@ -228,7 +228,8 @@ display_state = {
     "mode": "idle",       # idle | solid | image | text
     "color": (0, 0, 0),   # for solid mode
     "images": [],         # list of file paths for image mode
-    "wait": 4.0,          # seconds between images
+    "frames": [],         # [[path, seconds_on_panel], ...] in display order
+    "wait": 4.0,          # seconds between images (fallback when no frames)
     "loop": 0,            # 0 = forever
     "center": True,
     "text": "",
@@ -236,6 +237,9 @@ display_state = {
     "direction": "right-left",
     "start_time": None,   # time.time() when display started
 }
+
+# led-image-viewer takes ~1s to initialise before the first frame is visible
+PREVIEW_STARTUP_OFFSET = 1.0
 
 
 def allowed_file(filename: str) -> bool:
@@ -408,6 +412,7 @@ def play_images():
     # Indices in form fields refer to position in the FULL file list,
     # so we must look up each selected image's original index.
     all_files = sorted(f.name for f in UPLOAD_FOLDER.iterdir() if f.is_file() and not f.name.startswith("_"))
+    frames = []   # [[path, seconds], ...] for the live preview
     for img in images:
         try:
             idx = all_files.index(img)
@@ -426,6 +431,7 @@ def play_images():
             else:
                 cmd.append(f"-w{val}")
         cmd.append(img_path)
+        frames.append([img_path, _image_display_duration(img_path, mode, val)])
 
     log.info("Command: %s", " ".join(cmd))
 
@@ -446,6 +452,7 @@ def play_images():
             display_state.update({
                 "mode": "image",
                 "images": [str(UPLOAD_FOLDER / i) for i in images],
+                "frames": frames,
                 "wait": float(data.get("wait", 4) or 4),
                 "loop": int(data.get("loop", 0) or 0),
                 "center": bool(data.get("center")),
@@ -588,7 +595,7 @@ def solid():
 @app.route("/stop", methods=["POST"])
 def stop():
     kill_current()
-    display_state.update({"mode": "idle", "start_time": None})
+    display_state.update({"mode": "idle", "start_time": None, "frames": []})
     flash("Stopped", "success")
     return redirect(url_for("index"))
 
@@ -679,6 +686,7 @@ def play_stream():
         cmd.append("-C")
     cmd.append("-f")  # cycle forever through provided streams
 
+    frames = []   # [[path, seconds], ...] for the live preview
     for stream_name in streams:
         # Loop count control per stream
         s_idx = streams.index(stream_name)
@@ -686,6 +694,7 @@ def play_stream():
         if loops and loops != "0":
             cmd.append(f"-l{loops}")
         cmd.append(str(PLAYLIST_FOLDER / stream_name))
+        frames.extend(_stream_frames(PLAYLIST_FOLDER / stream_name))
 
     log.info("Command: %s", " ".join(cmd))
     kill_current()
@@ -702,6 +711,7 @@ def play_stream():
             display_state.update({
                 "mode": "image",
                 "images": [str(PLAYLIST_FOLDER / s) for s in streams],
+                "frames": frames,
                 "wait": 1.0,
                 "center": bool(data.get("center")),
                 "start_time": time.time(),
@@ -742,6 +752,117 @@ def _is_animated(image_path: str) -> bool:
             return getattr(im, "n_frames", 1) > 1
     except Exception:
         return False
+
+
+def _loop_seconds(image_path: str) -> float:
+    """Total seconds for one full loop of an animated image (0.0 if static)."""
+    try:
+        from PIL import Image as PILImage
+        with PILImage.open(image_path) as im:
+            n = getattr(im, "n_frames", 1)
+            if n <= 1:
+                return 0.0
+            total_ms = 0
+            for f in range(n):
+                im.seek(f)
+                total_ms += im.info.get("duration", 100)
+        return total_ms / 1000.0
+    except Exception:
+        return 0.0
+
+
+def _image_display_duration(image_path: str, mode: str, val_str: str) -> float:
+    """
+    How long one occurrence of this image stays on the panel given the
+    per-image mode/val that was used to build the viewer command.
+    - static + delay  : -w<sec>  -> sec (min 1s)
+    - static + loops  : each call shows ~1 second, n calls -> n seconds
+    - animated + delay: -t<sec>  -> sec
+    - animated + loops: -l<n>    -> n * one-loop duration
+    """
+    try:
+        val = float(val_str)
+    except (ValueError, TypeError):
+        val = 4.0
+    loop_s = _loop_seconds(image_path)
+    if loop_s > 0:                      # animated file
+        if mode == "loops":
+            try:
+                n = max(1, int(float(val_str)))
+            except (ValueError, TypeError):
+                n = 1
+            return n * loop_s
+        return val if val > 0 else loop_s
+    # static image – each viewer call displays for ~1 second
+    if mode == "loops":
+        try:
+            n = max(1, int(float(val_str)))
+        except (ValueError, TypeError):
+            n = 1
+        return float(n)
+    return max(1.0, val)
+
+
+def _stream_frames(stream_path) -> list:
+    """
+    Parse a .stream command file into [[image_path, seconds], ...].
+    Each bare (non-flag) token is one image occurrence; a -w/-t flag applies
+    to the next occurrence, -l<n> means n natural-length repeats.
+    """
+    frames = []
+    try:
+        lines = Path(stream_path).read_text().splitlines()
+    except Exception as e:
+        log.warning("Preview: cannot read stream %s: %s", stream_path, e)
+        return frames
+    pending_kind, pending_val = None, 0.0
+    for raw in lines:
+        tok = raw.strip()
+        if not tok or tok.startswith("#"):
+            continue
+        if tok.startswith("-"):
+            if len(tok) > 2 and tok[1] in "wtl":
+                try:
+                    pending_kind, pending_val = tok[1], float(tok[2:])
+                except ValueError:
+                    pass
+            else:
+                pending_kind = None     # matrix flag – not per-image
+            continue
+        p = Path(tok)
+        if not p.exists():
+            continue
+        loop_s = _loop_seconds(str(p))
+        if loop_s > 0:                  # animated occurrence
+            if pending_kind == "t" and pending_val > 0:
+                dur = pending_val
+            elif pending_kind == "l":
+                dur = max(1, int(pending_val)) * loop_s
+            else:
+                dur = loop_s
+        else:                           # static occurrence (~1s each)
+            if pending_kind in ("w", "t") and pending_val > 0:
+                dur = pending_val
+            elif pending_kind == "l":
+                dur = float(max(1, int(pending_val)))
+            else:
+                dur = 1.0
+        frames.append([str(p), dur])
+        pending_kind = None
+    return frames
+
+
+def _current_frame(frames: list, elapsed: float):
+    """Return (path, seconds_into_that_slot) for the given elapsed time."""
+    total = sum(d for _, d in frames)
+    if not frames or total <= 0:
+        return None, 0.0
+    t = elapsed % total
+    for path, dur in frames:
+        if t < dur:
+            return path, t
+        t -= dur
+    return frames[-1][0], frames[-1][1]
 
 
 def _calc_delay_repeats(image_path: str, delay_str: str) -> int:
@@ -957,41 +1078,48 @@ def rename_file():
 def preview_jpg():
     """
     Render a live preview of what is currently on the LED matrix.
-    Uses PIL to approximate the display at 4x scale for visibility.
+    The preview always uses the exact aspect ratio of the panel defined in
+    the saved settings (rows x cols x chain). Black when nothing displays.
     """
     import io
-    from PIL import Image, ImageDraw, ImageFont
+    from PIL import Image, ImageDraw
 
-    # Matrix dimensions from saved settings
+    # Matrix dimensions from saved settings – preview matches this aspect ratio
     s = load_settings()
-    rows = int(s.get("led_rows", 64) or 64)
-    cols = int(s.get("led_cols", 64) or 64)
-    chain = int(s.get("led_chain", 1) or 1)
+    try:
+        rows = max(1, int(s.get("led_rows", 64) or 64))
+    except (ValueError, TypeError):
+        rows = 64
+    try:
+        cols = max(1, int(s.get("led_cols", 64) or 64))
+    except (ValueError, TypeError):
+        cols = 64
+    try:
+        chain = max(1, int(s.get("led_chain", 1) or 1))
+    except (ValueError, TypeError):
+        chain = 1
     total_cols = cols * chain
 
-    # Scale factor for preview (make it visible in browser)
-    SCALE = 4
-    pw, ph = total_cols * SCALE, rows * SCALE
+    # Adaptive scale: keep the long side around 512px, exact aspect ratio
+    scale = max(3, min(16, round(512 / max(total_cols, rows))))
+    pw, ph = total_cols * scale, rows * scale
 
     with preview_lock:
         mode = display_state["mode"]
         running = current_process is not None and current_process.poll() is None
 
         if not running or mode == "idle":
-            # Idle screen
-            img = Image.new("RGB", (pw, ph), (15, 15, 25))
-            d = ImageDraw.Draw(img)
-            d.text((10, ph // 2 - 10), "IDLE – no display active",
-                   fill=(100, 100, 120))
+            # Nothing on the panel – pure black
+            img = Image.new("RGB", (pw, ph), (0, 0, 0))
         elif mode == "solid":
             r, g, b = display_state["color"]
             img = Image.new("RGB", (pw, ph), (r, g, b))
         elif mode == "image":
-            img = _render_image_preview(pw, ph, total_cols, rows)
+            img = _render_image_preview(pw, ph, total_cols, rows, scale)
         elif mode == "text":
             img = _render_text_preview(pw, ph, total_cols, rows)
         else:
-            img = Image.new("RGB", (pw, ph), (15, 15, 25))
+            img = Image.new("RGB", (pw, ph), (0, 0, 0))
 
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=80)
@@ -1000,43 +1128,69 @@ def preview_jpg():
                               headers={"Cache-Control": "no-store"})
 
 
-def _render_image_preview(pw, ph, total_cols, rows):
-    """Render the current image in the playlist based on elapsed time."""
+def _render_image_preview(pw, ph, total_cols, rows, scale):
+    """
+    Render the image currently on the panel (playlist or stream).
+    Uses per-image display durations so transitions stay in sync with the
+    real viewer; animated GIFs show the actual frame for this moment.
+    """
     from PIL import Image as PILImage
 
-    images = display_state["images"]
-    wait = display_state["wait"]
     center = display_state["center"]
     start = display_state["start_time"] or time.time()
+    elapsed = max(0.0, time.time() - start - PREVIEW_STARTUP_OFFSET)
 
-    if not images:
+    frames = display_state.get("frames") or []
+    if not frames:
+        # Fallback: legacy timing with a single global wait value
+        images = display_state["images"] or []
+        try:
+            wait = max(0.1, float(display_state.get("wait", 4) or 4))
+        except (ValueError, TypeError):
+            wait = 4.0
+        frames = [[i, wait] for i in images]
+
+    path, t_in_slot = _current_frame(frames, elapsed)
+    if not path:
         return PILImage.new("RGB", (pw, ph), (0, 0, 0))
 
-    # Determine which image is currently showing.
-    # led-image-viewer has ~1s startup before first frame is visible.
-    STARTUP_OFFSET = 1.0
-    elapsed = max(0, time.time() - start - STARTUP_OFFSET)
-    idx = int(elapsed / wait) % len(images)
-    path = images[idx]
-
     try:
-        src = PILImage.open(path).convert("RGB")
+        src = PILImage.open(path)
     except Exception as e:
         log.warning("Preview: cannot open %s: %s", path, e)
-        return PILImage.new("RGB", (pw, ph), (40, 0, 0))
+        return PILImage.new("RGB", (pw, ph), (0, 0, 0))
 
-    # Scale to fit matrix area
+    # Animated image – seek to the actual animation frame for this moment
+    try:
+        n = getattr(src, "n_frames", 1)
+        if n > 1:
+            durs_ms = []
+            total_ms = 0.0
+            for f in range(n):
+                src.seek(f)
+                d = src.info.get("duration", 100)
+                durs_ms.append(d)
+                total_ms += d
+            if total_ms > 0:
+                tms = (t_in_slot * 1000.0) % total_ms
+                acc = 0.0
+                for f, d in enumerate(durs_ms):
+                    if tms < acc + d or f == n - 1:
+                        src.seek(f)
+                        break
+                    acc += d
+    except Exception:
+        pass
+
+    src = src.convert("RGB")
     if center:
-        # Fit within matrix bounds, centered
-        src = src.thumbnail((total_cols * 4, rows * 4), PILImage.LANCZOS)
+        # Fit within matrix bounds, centered on black
+        src.thumbnail((total_cols * scale, rows * scale), PILImage.LANCZOS)
         canvas = PILImage.new("RGB", (pw, ph), (0, 0, 0))
-        x = (pw - src.width) // 2
-        y = (ph - src.height) // 2
-        canvas.paste(src, (x, y))
+        canvas.paste(src, ((pw - src.width) // 2, (ph - src.height) // 2))
         return canvas
-    else:
-        # Stretch to fill
-        return src.resize((pw, ph), PILImage.LANCZOS)
+    # Stretch to fill
+    return src.resize((pw, ph), PILImage.LANCZOS)
 
 
 def _render_text_preview(pw, ph, total_cols, rows):
@@ -1116,6 +1270,18 @@ def _play_splash():
     cmd.append(str(splash))
 
     log.info("Playing splash screen: %s", " ".join(cmd))
+
+    # Show the splash in the live preview while it plays
+    splash_dur = _loop_seconds(str(splash)) or 3.0
+    mark = time.time()
+    with preview_lock:
+        display_state.update({
+            "mode": "image",
+            "images": [str(splash)],
+            "frames": [[str(splash), splash_dur]],
+            "center": True,
+            "start_time": mark,
+        })
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         # Wait for it to finish (1 loop should be a few seconds)
@@ -1123,6 +1289,12 @@ def _play_splash():
         log.info("Splash screen complete")
     except Exception as e:
         log.warning("Splash screen failed: %s", e)
+    finally:
+        # Clear the splash from the preview unless something else started
+        with preview_lock:
+            if display_state.get("start_time") == mark \
+                    and display_state["images"] == [str(splash)]:
+                display_state.update({"mode": "idle", "start_time": None, "frames": []})
 
 
 if __name__ == "__main__":
